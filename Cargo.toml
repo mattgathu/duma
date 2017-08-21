@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Matt Gathu <mattgathu@gmail.com>"]
 
 [dependencies]
-reqwest = "0.7.2"
+reqwest = "0.7.3"
 indicatif = "0.6.0"
 console = "0.5.0"
 clap = "2.26.0"
