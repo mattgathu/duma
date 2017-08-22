@@ -54,7 +54,6 @@ fn download(target: &str, quiet_mode: bool) -> Result<(), Box<::std::error::Erro
 
         let chunk_len = len as usize / 99;
         let mut buf = Vec::new();
-        let mut byte_count: Vec<usize> = Vec::new();
 
         let bar = match quiet_mode {
             true => ProgressBar::hidden(),
@@ -68,7 +67,6 @@ fn download(target: &str, quiet_mode: bool) -> Result<(), Box<::std::error::Erro
         loop {
             let mut buffer = vec![0; chunk_len];
             let bcount = resp.read(&mut buffer[..]).unwrap();
-            byte_count.push(bcount.clone());
             buffer.truncate(bcount);
             if !buffer.is_empty() {
                 buf.extend(buffer.into_boxed_slice()
