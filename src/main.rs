@@ -24,7 +24,7 @@ fn parse_url(url: &str) -> Result<Url, UrlError> {
 
 }
 
-fn download(target: &str) -> Result<(), Box<::std::error::Error>> {
+fn download(target: &str, quiet_mode: bool) -> Result<(), Box<::std::error::Error>> {
 
     // parse url
     let url = parse_url(target)?;
@@ -32,8 +32,9 @@ fn download(target: &str) -> Result<(), Box<::std::error::Error>> {
     let mut resp = client.get(url)?
         .send()
         .unwrap();
-    println!("HTTP request sent... {}",
-             style(format!("{}", resp.status())).green());
+    print(format!("HTTP request sent... {}",
+                  style(format!("{}", resp.status())).green()),
+          quiet_mode);
     if resp.status().is_success() {
 
         let headers = resp.headers().clone();
@@ -41,19 +42,24 @@ fn download(target: &str) -> Result<(), Box<::std::error::Error>> {
 
         let ct_type = headers.get::<ContentType>().unwrap();
 
-        println!("Length: {} ({})",
-                 style(len).green(),
-                 style(format!("{}", HumanBytes(len))).red());
-        println!("Type: {}", style(ct_type).green());
+        print(format!("Length: {} ({})",
+                      style(len).green(),
+                      style(format!("{}", HumanBytes(len))).red()),
+              quiet_mode);
+        print(format!("Type: {}", style(ct_type).green()), quiet_mode);
 
         let fname = target.split("/").last().unwrap();
 
-        println!("Saving to: {}", style(fname).green());
+        print(format!("Saving to: {}", style(fname).green()), quiet_mode);
 
         let chunk_len = len as usize / 99;
         let mut buf = Vec::new();
         let mut byte_count: Vec<usize> = Vec::new();
-        let bar = ProgressBar::new(len as u64);
+
+        let bar = match quiet_mode {
+            true => ProgressBar::hidden(),
+            false => ProgressBar::new(len as u64),
+        };
         bar.set_message(fname);
         bar.set_style(ProgressStyle::default_bar()
             .template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
@@ -91,20 +97,34 @@ fn save_to_file(contents: &mut Vec<u8>, fname: &str) -> Result<(), std::io::Erro
 
 }
 
+fn print(string: String, quiet_mode: bool) {
+    // print if not in quiet mode
+    if !quiet_mode {
+        println!("{}", string);
+    }
+}
+
 fn main() {
-    let matches = App::new("My Simple Downloader")
+    let args = App::new("Rget")
         .version("0.1.0")
         .author("Matt Gathu <mattgathu@gmail.com>")
-        .about("Progressful downloader")
+        .about("wget clone written in Rust")
+        .arg(Arg::with_name("quiet")
+                 .short("q")
+                 .long("quiet")
+                 .help("quiet (no output)")
+                 .required(false)
+                 .takes_value(false))
         .arg(Arg::with_name("URL")
                  .required(true)
                  .takes_value(true)
                  .index(1)
                  .help("url to download"))
         .get_matches();
-    let url = matches.value_of("URL").unwrap();
-    match download(url) {
-        Ok(_) => println!("Download Successful!"),
-        Err(e) => println!("Got error: {}", e.description()),
+    let url = args.value_of("URL").unwrap();
+    let quiet_mode = args.is_present("quiet");
+    match download(url, quiet_mode) {
+        Ok(_) => print(format!("Download Successful!"), quiet_mode),
+        Err(e) => print(format!("Got error: {}", e.description()), quiet_mode),
     }
 }
