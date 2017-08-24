@@ -150,7 +150,7 @@ fn main() {
     let url = args.value_of("URL").unwrap();
     let quiet_mode = args.is_present("quiet");
     match download(url, quiet_mode) {
-        Ok(_) => print(format!("Download Successful!"), quiet_mode),
+        Ok(_) => {},
         Err(e) => print(format!("Got error: {}", e.description()), quiet_mode),
     }
 }
