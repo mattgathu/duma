@@ -24,6 +24,29 @@ fn parse_url(url: &str) -> Result<Url, UrlError> {
 
 }
 
+fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> ProgressBar {
+    let bar = match quiet_mode {
+        true => ProgressBar::hidden(),
+        false => {
+            match length {
+                Some(len) => ProgressBar::new(len),
+                None => ProgressBar::new_spinner(),
+            }
+        }
+    };
+
+    bar.set_message(msg);
+    match length.is_some() {
+        true => bar
+            .set_style(ProgressStyle::default_bar()
+                .template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
+                .progress_chars("=> ")),
+        false => bar.set_style(ProgressStyle::default_spinner()),
+    };
+
+    bar
+}
+
 fn download(target: &str, quiet_mode: bool) -> Result<(), Box<::std::error::Error>> {
 
     // parse url
@@ -38,34 +61,39 @@ fn download(target: &str, quiet_mode: bool) -> Result<(), Box<::std::error::Erro
     if resp.status().is_success() {
 
         let headers = resp.headers().clone();
-        let len = headers.get::<ContentLength>().map(|ct_len| **ct_len).unwrap_or(0);
+        let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
 
         let ct_type = headers.get::<ContentType>().unwrap();
 
-        print(format!("Length: {} ({})",
+        match ct_len {
+            Some(len) => {
+                print(format!("Length: {} ({})",
                       style(len).green(),
                       style(format!("{}", HumanBytes(len))).red()),
-              quiet_mode);
+                    quiet_mode);
+            },
+            None => {
+                print(format!("Length: {}", style("unknown").red()), quiet_mode); 
+            },
+        }
+
         print(format!("Type: {}", style(ct_type).green()), quiet_mode);
 
         let fname = target.split("/").last().unwrap();
 
         print(format!("Saving to: {}", style(fname).green()), quiet_mode);
 
-        let chunk_len = len as usize / 99;
+        let chunk_size = match ct_len {
+            Some(x) => x as usize / 99,
+            None => 1024usize, // default chunk size
+        };
+
         let mut buf = Vec::new();
 
-        let bar = match quiet_mode {
-            true => ProgressBar::hidden(),
-            false => ProgressBar::new(len as u64),
-        };
-        bar.set_message(fname);
-        bar.set_style(ProgressStyle::default_bar()
-            .template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
-            .progress_chars("=> "));
+        let bar = create_progress_bar(quiet_mode, fname, ct_len);
 
         loop {
-            let mut buffer = vec![0; chunk_len];
+            let mut buffer = vec![0; chunk_size];
             let bcount = resp.read(&mut buffer[..]).unwrap();
             buffer.truncate(bcount);
             if !buffer.is_empty() {
