@@ -47,7 +47,7 @@ fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> Prog
     bar
 }
 
-fn download(target: &str, quiet_mode: bool) -> Result<(), Box<::std::error::Error>> {
+fn download(target: &str, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<::std::error::Error>> {
 
     // parse url
     let url = parse_url(target)?;
@@ -79,7 +79,10 @@ fn download(target: &str, quiet_mode: bool) -> Result<(), Box<::std::error::Erro
 
         print(format!("Type: {}", style(ct_type).green()), quiet_mode);
 
-        let fname = target.split("/").last().unwrap();
+        let fname = match filename {
+            Some(name) => name,
+            None => target.split("/").last().unwrap(),
+        };
 
         print(format!("Saving to: {}", style(fname).green()), quiet_mode);
 
@@ -141,6 +144,12 @@ fn main() {
                  .help("quiet (no output)")
                  .required(false)
                  .takes_value(false))
+        .arg(Arg::with_name("FILE")
+             .short("O")
+             .long("output-document")
+             .help("write documents to FILE")
+             .required(false)
+             .takes_value(true))
         .arg(Arg::with_name("URL")
                  .required(true)
                  .takes_value(true)
@@ -149,7 +158,8 @@ fn main() {
         .get_matches();
     let url = args.value_of("URL").unwrap();
     let quiet_mode = args.is_present("quiet");
-    match download(url, quiet_mode) {
+    let file_name = args.value_of("FILE");
+    match download(url, quiet_mode, file_name) {
         Ok(_) => {},
         Err(e) => print(format!("Got error: {}", e.description()), quiet_mode),
     }
