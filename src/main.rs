@@ -3,11 +3,12 @@ extern crate console;
 extern crate reqwest;
 extern crate indicatif;
 
+use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::io::copy;
 use reqwest::{Client, Url, UrlError};
-use reqwest::header::{ContentLength, ContentType};
+use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
 use indicatif::{ProgressBar, ProgressStyle, HumanBytes};
 use clap::{Arg, App};
 use console::style;
@@ -47,14 +48,43 @@ fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> Prog
     bar
 }
 
-fn download(target: &str, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<::std::error::Error>> {
+
+fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_download: bool) -> Result<(), Box<::std::error::Error>> {
+    
+    let fname = match filename {
+            Some(name) => name,
+            None => target.split("/").last().unwrap(),
+        };
 
     // parse url
     let url = parse_url(target)?;
     let client = Client::new().unwrap();
-    let mut resp = client.get(url)?
-        .send()
-        .unwrap();
+    let mut resp = match resume_download {
+        true => {
+            let req_headers = client.head(parse_url(target)?)?.send()?.headers().clone();
+            match req_headers.get::<AcceptRanges>() {
+                Some(header) => {
+                    if header.contains(&RangeUnit::Bytes) {
+                        // get url with range header included
+                        // get the count of bytes downloaded
+                        let byte_count = match fs::metadata(fname) {
+                            Ok(metadata) => metadata.len(),
+                            Err(_) => 0u64,
+                        };
+                        let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
+                        client.get(url)?.header(byte_range).send()?
+                    } else {
+                        client.get(url)?.send()?
+                    } 
+                },
+                None => client.get(url)?.send()?
+            }
+
+            //client.get(url)?.send()?
+
+        },
+        false => client.get(url)?.send().unwrap(),
+    };
     print(format!("HTTP request sent... {}",
                   style(format!("{}", resp.status())).green()),
           quiet_mode);
@@ -78,11 +108,6 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>) -> Result<()
         }
 
         print(format!("Type: {}", style(ct_type).green()), quiet_mode);
-
-        let fname = match filename {
-            Some(name) => name,
-            None => target.split("/").last().unwrap(),
-        };
 
         print(format!("Saving to: {}", style(fname).green()), quiet_mode);
 
@@ -144,6 +169,12 @@ fn main() {
                  .help("quiet (no output)")
                  .required(false)
                  .takes_value(false))
+        .arg(Arg::with_name("continue")
+             .short("c")
+             .long("continue")
+             .help("resume getting a partially-downloaded file")
+             .required(false)
+             .takes_value(false))
         .arg(Arg::with_name("FILE")
              .short("O")
              .long("output-document")
@@ -158,8 +189,9 @@ fn main() {
         .get_matches();
     let url = args.value_of("URL").unwrap();
     let quiet_mode = args.is_present("quiet");
+    let resume_download = args.is_present("continue");
     let file_name = args.value_of("FILE");
-    match download(url, quiet_mode, file_name) {
+    match download(url, quiet_mode, file_name, resume_download) {
         Ok(_) => {},
         Err(e) => print(format!("Got error: {}", e.description()), quiet_mode),
     }
