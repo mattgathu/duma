@@ -65,14 +65,18 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
             match req_headers.get::<AcceptRanges>() {
                 Some(header) => {
                     if header.contains(&RangeUnit::Bytes) {
-                        // get url with range header included
-                        // get the count of bytes downloaded
                         let byte_count = match fs::metadata(fname) {
                             Ok(metadata) => metadata.len(),
                             Err(_) => 0u64,
                         };
-                        let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
-                        client.get(url)?.header(byte_range).send()?
+                        // if byte_count is zero don't pass range header
+                        match byte_count {
+                            0 => client.get(url)?.send()?,
+                            _ => {
+                                let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
+                                client.get(url)?.header(byte_range).send()?
+                            },
+                        }
                     } else {
                         client.get(url)?.send()?
                     } 
