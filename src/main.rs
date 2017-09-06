@@ -40,7 +40,7 @@ fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> Prog
     match length.is_some() {
         true => bar
             .set_style(ProgressStyle::default_bar()
-                .template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
+                .template("{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
                 .progress_chars("=> ")),
         false => bar.set_style(ProgressStyle::default_spinner()),
     };
@@ -123,6 +123,25 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
         let mut buf = Vec::new();
 
         let bar = create_progress_bar(quiet_mode, fname, ct_len);
+
+        // if resuming download, update progress bar
+        if resume_download {
+            // change bar style
+            bar.set_style(ProgressStyle::default_bar()
+                .template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.red/blue}] {bytes}/{total_bytes} eta: {eta}")
+                .progress_chars("+> "));
+ 
+            // progress bar
+            match fs::metadata(fname) {
+                Ok(metadata) => bar.inc(metadata.len()),
+                Err(_) => {println!("error")},
+            };
+            // reset bar style
+            bar.set_style(ProgressStyle::default_bar()
+                .template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
+                .progress_chars("=> "));
+ 
+        }
 
         loop {
             let mut buffer = vec![0; chunk_size];

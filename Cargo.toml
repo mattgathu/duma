@@ -5,6 +5,6 @@ authors = ["Matt Gathu <mattgathu@gmail.com>"]
 
 [dependencies]
 reqwest = "0.7.3"
-indicatif = "0.6.0"
+indicatif = "0.7.0"
 console = "0.5.0"
 clap = "2.26.0"

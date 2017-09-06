@@ -4,7 +4,7 @@ version = "0.1.0"
 dependencies = [
  "clap 2.26.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "console 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "indicatif 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "indicatif 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "console 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -887,7 +887,7 @@ dependencies = [
 "checksum hyper 0.11.2 (registry+https://github.com/rust-lang/crates.io-index)" = "641abc3e3fcf0de41165595f801376e01106bca1fd876dda937730e477ca004c"
 "checksum hyper-tls 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "9c81fa95203e2a6087242c38691a0210f23e9f3f8f944350bd676522132e2985"
 "checksum idna 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "014b298351066f1512874135335d62a789ffe78a9974f94b43ed5621951eaf7d"
-"checksum indicatif 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "9ec647e1aec3f5a0208bcc1004ebaaa94d281748b7265227dddfe5757a04a212"
+"checksum indicatif 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "3ba24d01b1bc8bb67a28f71935c7545f2dff16e6c6a2b0b20af1514b6c9f096a"
 "checksum iovec 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "29d062ee61fccdf25be172e70f34c9f6efc597e1fb8f6526e8437b2046ab26be"
 "checksum itoa 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "eb2f404fbc66fd9aac13e998248505e7ecb2ad8e44ab6388684c5fb11c6c251c"
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
