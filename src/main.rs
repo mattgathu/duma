@@ -6,7 +6,8 @@ extern crate indicatif;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
-use std::io::copy;
+use std::io::Write;
+use std::io::BufWriter;
 use reqwest::{Client, Url, UrlError};
 use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
 use indicatif::{ProgressBar, ProgressStyle, HumanBytes};
@@ -120,7 +121,8 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
             None => 1024usize, // default chunk size
         };
 
-        let mut buf = Vec::new();
+        let out_file = File::create(fname)?;
+        let mut writer = BufWriter::new(out_file);
 
         let bar = create_progress_bar(quiet_mode, fname, ct_len);
 
@@ -148,10 +150,7 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
             let bcount = resp.read(&mut buffer[..]).unwrap();
             buffer.truncate(bcount);
             if !buffer.is_empty() {
-                buf.extend(buffer.into_boxed_slice()
-                               .into_vec()
-                               .iter()
-                               .cloned());
+                writer.write(buffer.as_slice()).unwrap();
                 bar.inc(bcount as u64);
             } else {
                 break;
@@ -160,16 +159,8 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
 
         bar.finish();
 
-        save_to_file(&mut buf, fname)?;
     }
 
-    Ok(())
-
-}
-
-fn save_to_file(contents: &mut Vec<u8>, fname: &str) -> Result<(), std::io::Error> {
-    let mut file = File::create(fname).unwrap();
-    copy(&mut contents.as_slice(), &mut file).unwrap();
     Ok(())
 
 }
