@@ -5,6 +5,8 @@ extern crate indicatif;
 
 use std::fs;
 use std::fs::File;
+use std::fs::OpenOptions;
+use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::io::BufWriter;
@@ -24,6 +26,14 @@ fn parse_url(url: &str) -> Result<Url, UrlError> {
         Err(error) => return Err(error),
     }
 
+}
+
+fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File>{
+    if resume_download {
+        OpenOptions::new().append(true).open(fname)
+    } else {
+        OpenOptions::new().write(true).create(true).open(fname)
+    }
 }
 
 fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> ProgressBar {
@@ -95,7 +105,10 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
           quiet_mode);
     if resp.status().is_success() {
 
-        let headers = resp.headers().clone();
+        let headers = match resume_download {
+            false => resp.headers().clone(),
+            true => client.get(parse_url(target)?)?.send()?.headers().clone(),
+        };
         let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
 
         let ct_type = headers.get::<ContentType>().unwrap();
@@ -121,28 +134,15 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
             None => 1024usize, // default chunk size
         };
 
-        let out_file = File::create(fname)?;
+        let out_file = get_file_handle(fname, resume_download)?;
         let mut writer = BufWriter::new(out_file);
 
         let bar = create_progress_bar(quiet_mode, fname, ct_len);
 
         // if resuming download, update progress bar
         if resume_download {
-            // change bar style
-            bar.set_style(ProgressStyle::default_bar()
-                .template("{msg} {spinner:.green} {percent}% [{wide_bar:.red/blue}] {bytes}/{total_bytes} eta: {eta}")
-                .progress_chars("+> "));
- 
-            // progress bar
-            match fs::metadata(fname) {
-                Ok(metadata) => bar.inc(metadata.len()),
-                Err(_) => {println!("error")},
-            };
-            // reset bar style
-            bar.set_style(ProgressStyle::default_bar()
-                .template("{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
-                .progress_chars("=> "));
- 
+            let metadata = fs::metadata(fname)?;
+            bar.inc(metadata.len());
         }
 
         loop {
