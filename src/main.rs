@@ -11,6 +11,7 @@ use std::io::Read;
 use std::io::Write;
 use std::io::BufWriter;
 use std::io::ErrorKind;
+use std::fmt::Display;
 use reqwest::{Client, Url, UrlError};
 use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
 use indicatif::{ProgressBar, ProgressStyle, HumanBytes};
@@ -174,10 +175,10 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
 
 }
 
-fn print(string: String, quiet_mode: bool) {
+fn print<T: Display>(var: T, quiet_mode: bool) {
     // print if not in quiet mode
     if !quiet_mode {
-        println!("{}", string);
+        println!("{}", var);
     }
 }
 
