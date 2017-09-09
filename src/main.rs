@@ -168,7 +168,7 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
         bar.finish();
 
     } else if resp.status().as_u16() == 416 {
-        print(format!("\n{}\n", style("The file is already fully retrieved; nothing to do.").red()), quiet_mode);
+        print(style("\nThe file is already fully retrieved; nothing to do.\n").red(), quiet_mode);
     }
 
     Ok(())
