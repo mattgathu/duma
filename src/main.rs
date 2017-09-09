@@ -10,6 +10,7 @@ use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::io::BufWriter;
+use std::io::ErrorKind;
 use reqwest::{Client, Url, UrlError};
 use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
 use indicatif::{ProgressBar, ProgressStyle, HumanBytes};
@@ -30,7 +31,13 @@ fn parse_url(url: &str) -> Result<Url, UrlError> {
 
 fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File>{
     if resume_download {
-        OpenOptions::new().append(true).open(fname)
+        match OpenOptions::new().append(true).open(fname) {
+            Ok(file) => Ok(file),
+            Err(ref error) if error.kind() == ErrorKind::NotFound => {
+                OpenOptions::new().write(true).create(true).open(fname)
+            },
+            Err(error) => Err(error),
+        }
     } else {
         OpenOptions::new().write(true).create(true).open(fname)
     }
