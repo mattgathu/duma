@@ -9,8 +9,7 @@ USAGE:
 For more information try --help
 ";
 
-static INVALID_URL_OUTPUT: &'static str = "Got error: failed to lookup address information: nodename nor servname provided, or not known
-";
+static INVALID_URL_OUTPUT: &'static str = "Got error: failed to lookup address information:";
  
 #[cfg(test)]
 mod integration {
@@ -34,6 +33,6 @@ mod integration {
             .output()
             .expect("failed to execute process");
     
-        assert_eq!(String::from_utf8_lossy(&output.stderr), INVALID_URL_OUTPUT);
+        assert!(String::from_utf8_lossy(&output.stderr).contains(INVALID_URL_OUTPUT));
     }
 }
