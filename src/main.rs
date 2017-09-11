@@ -106,7 +106,7 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
             //client.get(url)?.send()?
 
         },
-        false => client.get(url)?.send().unwrap(),
+        false => client.get(url)?.send()?
     };
     print(format!("HTTP request sent... {}",
                   style(format!("{}", resp.status())).green()),
