@@ -110,7 +110,7 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
     };
     print(format!("HTTP request sent... {}",
                   style(format!("{}", resp.status())).green()),
-          quiet_mode);
+          quiet_mode, false);
     if resp.status().is_success() {
 
         let headers = match resume_download {
@@ -126,16 +126,16 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
                 print(format!("Length: {} ({})",
                       style(len).green(),
                       style(format!("{}", HumanBytes(len))).red()),
-                    quiet_mode);
+                    quiet_mode, false);
             },
             None => {
-                print(format!("Length: {}", style("unknown").red()), quiet_mode); 
+                print(format!("Length: {}", style("unknown").red()), quiet_mode, false); 
             },
         }
 
-        print(format!("Type: {}", style(ct_type).green()), quiet_mode);
+        print(format!("Type: {}", style(ct_type).green()), quiet_mode, false);
 
-        print(format!("Saving to: {}", style(fname).green()), quiet_mode);
+        print(format!("Saving to: {}", style(fname).green()), quiet_mode, false);
 
         let chunk_size = match ct_len {
             Some(x) => x as usize / 99,
@@ -168,17 +168,21 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
         bar.finish();
 
     } else if resp.status().as_u16() == 416 {
-        print(style("\nThe file is already fully retrieved; nothing to do.\n").red(), quiet_mode);
+        print(style("\nThe file is already fully retrieved; nothing to do.\n").red(), quiet_mode, false);
     }
 
     Ok(())
 
 }
 
-fn print<T: Display>(var: T, quiet_mode: bool) {
+fn print<T: Display>(var: T, quiet_mode: bool, is_error: bool) {
     // print if not in quiet mode
     if !quiet_mode {
-        println!("{}", var);
+        if is_error {
+            eprintln!("{}", var);
+        } else {
+            println!("{}", var);
+        }
     }
 }
 
@@ -217,6 +221,6 @@ fn main() {
     let file_name = args.value_of("FILE");
     match download(url, quiet_mode, file_name, resume_download) {
         Ok(_) => {},
-        Err(e) => print(format!("Got error: {}", e.description()), quiet_mode),
+        Err(e) => print(format!("Got error: {}", e.description()), quiet_mode, true),
     }
 }

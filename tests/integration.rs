@@ -26,5 +26,5 @@ fn calling_rget_with_invalid_url() {
         .output()
         .expect("failed to execute process");
 
-    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), expected);
 }
