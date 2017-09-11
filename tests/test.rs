@@ -16,3 +16,15 @@ For more information try --help
 
     assert_eq!(String::from_utf8_lossy(&output.stderr), expected);
 }
+
+#[test]
+fn calling_rget_with_invalid_url() {
+    let expected = r#"Got error: failed to lookup address information: nodename nor servname provided, or not known
+"#;
+    let output = Command::new("./target/debug/rget")
+        .arg("wwww.shouldnotwork.com")
+        .output()
+        .expect("failed to execute process");
+
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
