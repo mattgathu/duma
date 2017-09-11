@@ -10,9 +10,7 @@ USAGE:
 
 For more information try --help
 "#;
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("./target/debug/rget")
+    let output = Command::new("./target/debug/rget")
         .output()
         .expect("failed to execute process");
 
