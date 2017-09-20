@@ -1,4 +1,3 @@
-use std::process::Command;
 
 static WITHOUT_ARGS_OUTPUT: &'static str = "error: The following required arguments were not provided:
     <URL>
@@ -13,13 +12,23 @@ static INVALID_URL_OUTPUT: &'static str = "Got error: failed to lookup address i
  
 #[cfg(test)]
 mod integration {
-    use Command;
+    use std::process::Command;
     use WITHOUT_ARGS_OUTPUT;
     use INVALID_URL_OUTPUT;
 
+    #[cfg(not(windows))]
+    fn get_cmd() -> Command {
+        Command::new("./target/debug/rget")
+    }
+
+    #[cfg(windows)]
+    fn get_cmd() -> Command {
+        Command::new("./target/debug/rget.exe")
+    }
+
     #[test]
     fn calling_rget_without_args() {
-        let output = Command::new("./target/debug/rget")
+        let output = get_cmd()
             .output()
             .expect("failed to execute process");
     
@@ -28,7 +37,7 @@ mod integration {
     
     #[test]
     fn calling_rget_with_invalid_url() {
-        let output = Command::new("./target/debug/rget")
+        let output = get_cmd()
             .arg("wwww.shouldnotwork.com")
             .output()
             .expect("failed to execute process");
