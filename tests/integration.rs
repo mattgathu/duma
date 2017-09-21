@@ -1,4 +1,4 @@
-
+#[allow(dead_code)]
 static WITHOUT_ARGS_OUTPUT: &'static str = "error: The following required arguments were not provided:
     <URL>
 
@@ -8,6 +8,7 @@ USAGE:
 For more information try --help
 ";
 
+#[allow(dead_code)]
 static WITHOUT_ARGS_OUTPUT_WINDOWS: &'static str = "error: The following required arguments were not provided:
     <URL>
 
@@ -20,9 +21,11 @@ For more information try --help
 static INVALID_URL_OUTPUT: &'static str = "Got error: failed to lookup address information:";
  
 #[cfg(test)]
+#[allow(unused_imports)]
 mod integration {
     use std::process::Command;
     use WITHOUT_ARGS_OUTPUT;
+    use WITHOUT_ARGS_OUTPUT_WINDOWS;
     use INVALID_URL_OUTPUT;
 
     #[cfg(not(windows))]
