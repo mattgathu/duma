@@ -8,6 +8,15 @@ USAGE:
 For more information try --help
 ";
 
+static WITHOUT_ARGS_OUTPUT_WINDOWS: &'static str = "error: The following required arguments were not provided:
+    <URL>
+
+USAGE:
+    rget.exe [FLAGS] [OPTIONS] <URL>
+
+For more information try --help
+";
+
 static INVALID_URL_OUTPUT: &'static str = "Got error: failed to lookup address information:";
  
 #[cfg(test)]
@@ -27,6 +36,7 @@ mod integration {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn calling_rget_without_args() {
         let output = get_cmd()
             .output()
@@ -34,8 +44,19 @@ mod integration {
     
         assert_eq!(String::from_utf8_lossy(&output.stderr), WITHOUT_ARGS_OUTPUT);
     }
+
+    #[test]
+    #[cfg(windows)]
+    fn calling_rget_without_args() {
+        let output = get_cmd()
+            .output()
+            .expect("failed to execute process");
+    
+        assert_eq!(String::from_utf8_lossy(&output.stderr), WITHOUT_ARGS_OUTPUT_WINDOWS);
+    }
     
     #[test]
+    #[cfg(not(windows))]
     fn calling_rget_with_invalid_url() {
         let output = get_cmd()
             .arg("wwww.shouldnotwork.com")
