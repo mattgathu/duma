@@ -7,6 +7,7 @@ use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
+use std::process;
 use std::io::Read;
 use std::io::Write;
 use std::io::BufWriter;
@@ -221,6 +222,25 @@ fn main() {
     let file_name = args.value_of("FILE");
     match download(url, quiet_mode, file_name, resume_download) {
         Ok(_) => {},
-        Err(e) => print(format!("Got error: {}", e.description()), quiet_mode, true),
+        Err(e) => {
+            print(format!("Got error: {}", e.description()), quiet_mode, true);
+            process::exit(1);
+        }
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_url_works() {
+        let error = parse_url("www.mattgathu.github.io");
+        match error {
+            Ok(_) => {},
+            Err(_) => {panic!("parse_url failed to parse!")},
+        };
     }
 }

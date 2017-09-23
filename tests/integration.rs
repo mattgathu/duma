@@ -1,71 +1,29 @@
-#[allow(dead_code)]
-static WITHOUT_ARGS_OUTPUT: &'static str = "error: The following required arguments were not provided:
-    <URL>
-
-USAGE:
-    rget [FLAGS] [OPTIONS] <URL>
-
-For more information try --help
-";
-
-#[allow(dead_code)]
-static WITHOUT_ARGS_OUTPUT_WINDOWS: &'static str = "error: The following required arguments were not provided:
-    <URL>
-
-USAGE:
-    rget.exe [FLAGS] [OPTIONS] <URL>
-
-For more information try --help
-";
+extern crate assert_cli;
 
 static INVALID_URL_OUTPUT: &'static str = "Got error: failed to lookup address information:";
- 
+
 #[cfg(test)]
-#[allow(unused_imports)]
 mod integration {
-    use std::process::Command;
-    use WITHOUT_ARGS_OUTPUT;
-    use WITHOUT_ARGS_OUTPUT_WINDOWS;
+    use assert_cli;
     use INVALID_URL_OUTPUT;
 
-    #[cfg(not(windows))]
-    fn get_cmd() -> Command {
-        Command::new("./target/debug/rget")
-    }
-
-    #[cfg(windows)]
-    fn get_cmd() -> Command {
-        Command::new("./target/debug/rget.exe")
-    }
-
     #[test]
-    #[cfg(not(windows))]
     fn calling_rget_without_args() {
-        let output = get_cmd()
-            .output()
-            .expect("failed to execute process");
-    
-        assert_eq!(String::from_utf8_lossy(&output.stderr), WITHOUT_ARGS_OUTPUT);
+        assert_cli::Assert::main_binary()
+            .fails()
+            .and()
+            .prints_error("error: The following required arguments were not provided:")
+            .unwrap();
+
     }
 
     #[test]
-    #[cfg(windows)]
-    fn calling_rget_without_args() {
-        let output = get_cmd()
-            .output()
-            .expect("failed to execute process");
-    
-        assert_eq!(String::from_utf8_lossy(&output.stderr), WITHOUT_ARGS_OUTPUT_WINDOWS);
-    }
-    
-    #[test]
-    #[cfg(not(windows))]
     fn calling_rget_with_invalid_url() {
-        let output = get_cmd()
-            .arg("wwww.shouldnotwork.com")
-            .output()
-            .expect("failed to execute process");
-    
-        assert!(String::from_utf8_lossy(&output.stderr).contains(INVALID_URL_OUTPUT));
+        assert_cli::Assert::main_binary()
+            .with_args(&["wwww.shouldnotwork.com"])
+            .fails()
+            .and()
+            .prints_error(INVALID_URL_OUTPUT)
+            .unwrap();
     }
 }
