@@ -1,11 +1,8 @@
 extern crate assert_cli;
 
-static INVALID_URL_OUTPUT: &'static str = "Got error: failed to lookup address information:";
-
 #[cfg(test)]
 mod integration {
     use assert_cli;
-    use INVALID_URL_OUTPUT;
 
     #[test]
     fn calling_rget_without_args() {
@@ -23,7 +20,7 @@ mod integration {
             .with_args(&["wwww.shouldnotwork.com"])
             .fails()
             .and()
-            .prints_error(INVALID_URL_OUTPUT)
+            .prints_error("Got error:")
             .unwrap();
     }
 }
