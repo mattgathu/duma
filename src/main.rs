@@ -26,18 +26,18 @@ fn parse_url(url: &str) -> Result<Url, UrlError> {
             let url_with_base = format!("{}{}", "http://", url);
             Url::parse(url_with_base.as_str())
         }
-        Err(error) => return Err(error),
+        Err(error) => Err(error),
     }
 
 }
 
-fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File>{
+fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File> {
     if resume_download {
         match OpenOptions::new().append(true).open(fname) {
             Ok(file) => Ok(file),
             Err(ref error) if error.kind() == ErrorKind::NotFound => {
                 OpenOptions::new().write(true).create(true).open(fname)
-            },
+            }
             Err(error) => Err(error),
         }
     } else {
@@ -46,77 +46,97 @@ fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File>{
 }
 
 fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> ProgressBar {
-    let bar = match quiet_mode {
-        true => ProgressBar::hidden(),
-        false => {
-            match length {
-                Some(len) => ProgressBar::new(len),
-                None => ProgressBar::new_spinner(),
-            }
+    let progbar = if quiet_mode {
+        ProgressBar::hidden()
+    } else {
+        match length {
+            Some(len) => ProgressBar::new(len),
+            None => ProgressBar::new_spinner(),
         }
     };
 
-    bar.set_message(msg);
-    match length.is_some() {
-        true => bar
-            .set_style(ProgressStyle::default_bar()
+    progbar.set_message(msg);
+    if length.is_some() {
+        progbar.set_style(ProgressStyle::default_bar()
                 .template("{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
-                .progress_chars("=> ")),
-        false => bar.set_style(ProgressStyle::default_spinner()),
-    };
+                .progress_chars("=> "));
+    } else {
+        progbar.set_style(ProgressStyle::default_spinner());
+    }
 
-    bar
+    progbar
 }
 
 
-fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_download: bool) -> Result<(), Box<::std::error::Error>> {
-    
+fn download(target: &str,
+            quiet_mode: bool,
+            filename: Option<&str>,
+            resume_download: bool)
+            -> Result<(), Box<::std::error::Error>> {
+
     let fname = match filename {
-            Some(name) => name,
-            None => target.split("/").last().unwrap(),
-        };
+        Some(name) => name,
+        None => target.split('/').last().unwrap(),
+    };
 
     // parse url
     let url = parse_url(target)?;
     let client = Client::new().unwrap();
-    let mut resp = match resume_download {
-        true => {
-            let req_headers = client.head(parse_url(target)?)?.send()?.headers().clone();
-            match req_headers.get::<AcceptRanges>() {
-                Some(header) => {
-                    if header.contains(&RangeUnit::Bytes) {
-                        let byte_count = match fs::metadata(fname) {
-                            Ok(metadata) => metadata.len(),
-                            Err(_) => 0u64,
-                        };
-                        // if byte_count is zero don't pass range header
-                        match byte_count {
-                            0 => client.get(url)?.send()?,
-                            _ => {
-                                let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
-                                client.get(url)?.header(byte_range).send()?
-                            },
+    let mut resp = if resume_download {
+        let req_headers = client.head(parse_url(target)?)?
+            .send()?
+            .headers()
+            .clone();
+        match req_headers.get::<AcceptRanges>() {
+            Some(header) => {
+                if header.contains(&RangeUnit::Bytes) {
+                    let byte_count = match fs::metadata(fname) {
+                        Ok(metadata) => metadata.len(),
+                        Err(_) => 0u64,
+                    };
+                    // if byte_count is zero don't pass range header
+                    match byte_count {
+                        0 => {
+                            client.get(url)?
+                                .send()?
                         }
-                    } else {
-                        client.get(url)?.send()?
-                    } 
-                },
-                None => client.get(url)?.send()?
+                        _ => {
+                            let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
+                            client.get(url)?
+                                .header(byte_range)
+                                .send()?
+                        }
+                    }
+                } else {
+                    client.get(url)?
+                        .send()?
+                }
             }
+            None => {
+                client.get(url)?
+                    .send()?
+            }
+        }
 
-            //client.get(url)?.send()?
+        //client.get(url)?.send()?
 
-        },
-        false => client.get(url)?.send()?
+    } else {
+        client.get(url)?
+            .send()?
     };
-    print(format!("HTTP request sent... {}",
-                  style(format!("{}", resp.status())).green()),
-          quiet_mode, false);
+    print(&format!("HTTP request sent... {}",
+                   style(format!("{}", resp.status())).green()),
+          quiet_mode,
+          false);
     if resp.status().is_success() {
 
-        let headers = match resume_download {
-            false => resp.headers().clone(),
-            true => client.get(parse_url(target)?)?.send()?.headers().clone(),
+        let headers = if resume_download {
+            resp.headers().clone()
+        } else {
+            client.get(parse_url(target)?)?
+                .send()?
+                .headers()
+                .clone()
         };
         let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
 
@@ -124,19 +144,26 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
 
         match ct_len {
             Some(len) => {
-                print(format!("Length: {} ({})",
-                      style(len).green(),
-                      style(format!("{}", HumanBytes(len))).red()),
-                    quiet_mode, false);
-            },
+                print(&format!("Length: {} ({})",
+                               style(len).green(),
+                               style(format!("{}", HumanBytes(len))).red()),
+                      quiet_mode,
+                      false);
+            }
             None => {
-                print(format!("Length: {}", style("unknown").red()), quiet_mode, false); 
-            },
+                print(&format!("Length: {}", style("unknown").red()),
+                      quiet_mode,
+                      false);
+            }
         }
 
-        print(format!("Type: {}", style(ct_type).green()), quiet_mode, false);
+        print(&format!("Type: {}", style(ct_type).green()),
+              quiet_mode,
+              false);
 
-        print(format!("Saving to: {}", style(fname).green()), quiet_mode, false);
+        print(&format!("Saving to: {}", style(fname).green()),
+              quiet_mode,
+              false);
 
         let chunk_size = match ct_len {
             Some(x) => x as usize / 99,
@@ -146,12 +173,12 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
         let out_file = get_file_handle(fname, resume_download)?;
         let mut writer = BufWriter::new(out_file);
 
-        let bar = create_progress_bar(quiet_mode, fname, ct_len);
+        let pbar = create_progress_bar(quiet_mode, fname, ct_len);
 
         // if resuming download, update progress bar
         if resume_download {
             let metadata = fs::metadata(fname)?;
-            bar.inc(metadata.len());
+            pbar.inc(metadata.len());
         }
 
         loop {
@@ -159,24 +186,26 @@ fn download(target: &str, quiet_mode: bool, filename: Option<&str>, resume_downl
             let bcount = resp.read(&mut buffer[..]).unwrap();
             buffer.truncate(bcount);
             if !buffer.is_empty() {
-                writer.write(buffer.as_slice()).unwrap();
-                bar.inc(bcount as u64);
+                writer.write_all(buffer.as_slice()).unwrap();
+                pbar.inc(bcount as u64);
             } else {
                 break;
             }
         }
 
-        bar.finish();
+        pbar.finish();
 
     } else if resp.status().as_u16() == 416 {
-        print(style("\nThe file is already fully retrieved; nothing to do.\n").red(), quiet_mode, false);
+        print(&style("\nThe file is already fully retrieved; nothing to do.\n").red(),
+              quiet_mode,
+              false);
     }
 
     Ok(())
 
 }
 
-fn print<T: Display>(var: T, quiet_mode: bool, is_error: bool) {
+fn print<T: Display>(var: &T, quiet_mode: bool, is_error: bool) {
     // print if not in quiet mode
     if !quiet_mode {
         if is_error {
@@ -199,17 +228,17 @@ fn main() {
                  .required(false)
                  .takes_value(false))
         .arg(Arg::with_name("continue")
-             .short("c")
-             .long("continue")
-             .help("resume getting a partially-downloaded file")
-             .required(false)
-             .takes_value(false))
+                 .short("c")
+                 .long("continue")
+                 .help("resume getting a partially-downloaded file")
+                 .required(false)
+                 .takes_value(false))
         .arg(Arg::with_name("FILE")
-             .short("O")
-             .long("output-document")
-             .help("write documents to FILE")
-             .required(false)
-             .takes_value(true))
+                 .short("O")
+                 .long("output-document")
+                 .help("write documents to FILE")
+                 .required(false)
+                 .takes_value(true))
         .arg(Arg::with_name("URL")
                  .required(true)
                  .takes_value(true)
@@ -221,9 +250,9 @@ fn main() {
     let resume_download = args.is_present("continue");
     let file_name = args.value_of("FILE");
     match download(url, quiet_mode, file_name, resume_download) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
-            print(format!("Got error: {}", e.description()), quiet_mode, true);
+            print(&format!("Got error: {}", e.description()), quiet_mode, true);
             process::exit(1);
         }
     }
@@ -239,8 +268,8 @@ mod tests {
     fn parse_url_works() {
         let error = parse_url("www.mattgathu.github.io");
         match error {
-            Ok(_) => {},
-            Err(_) => {panic!("parse_url failed to parse!")},
+            Ok(_) => {}
+            Err(_) => panic!("parse_url failed to parse!"),
         };
     }
 }
