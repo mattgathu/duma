@@ -13,6 +13,7 @@ use console::style;
 
 use ftp::FtpStream;
 
+static PBAR_FMT: &'static str = "{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}";
 
 fn print<T: Display>(var: &T, quiet_mode: bool, is_error: bool) {
     // print if not in quiet mode
@@ -51,9 +52,7 @@ fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<usize>) -> Pr
 
     progbar.set_message(msg);
     if length.is_some() {
-        progbar.set_style(ProgressStyle::default_bar()
-                .template("{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
-                .progress_chars("=> "));
+        progbar.set_style(ProgressStyle::default_bar().template(PBAR_FMT).progress_chars("=> "));
     } else {
         progbar.set_style(ProgressStyle::default_spinner());
     }
@@ -62,17 +61,21 @@ fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<usize>) -> Pr
 }
 
 
-pub fn download(url: &str, filename: Option<&str>, quiet_mode: bool) -> Result<(), Box<::std::error::Error>> {
-    let parsed_url = Url::parse(url)?;
-    let ftp_server = format!("{}:{}", parsed_url.host_str().unwrap(), parsed_url.port_or_known_default().unwrap());
-    let username = if parsed_url.username().is_empty() {
+pub fn download(url: Url,
+                filename: Option<&str>,
+                quiet_mode: bool)
+                -> Result<(), Box<::std::error::Error>> {
+    let ftp_server = format!("{}:{}",
+                             url.host_str().unwrap(),
+                             url.port_or_known_default().unwrap());
+    let username = if url.username().is_empty() {
         "anonymous"
     } else {
-        parsed_url.username()
+        url.username()
     };
-    let password = parsed_url.password().unwrap_or("anonymous");
+    let password = url.password().unwrap_or("anonymous");
 
-    let mut path_segments: Vec<&str> = parsed_url.path_segments().unwrap().collect();
+    let mut path_segments: Vec<&str> = url.path_segments().unwrap().collect();
     let ftp_fname = path_segments.pop().unwrap();
 
     let mut conn = FtpStream::connect(ftp_server)?;
@@ -84,23 +87,28 @@ pub fn download(url: &str, filename: Option<&str>, quiet_mode: bool) -> Result<(
     let mut reader = conn.get(ftp_fname)?;
 
     match ct_len {
-            Some(len) => {
-                print(&format!("Length: {} ({})",
-                               style(len).green(),
-                               style(format!("{}", HumanBytes(len as u64))).red()),
-                      quiet_mode,
-                      false);
-            }
-            None => {
-                print(&format!("Length: {}", style("unknown").red()),
-                      quiet_mode,
-                      false);
-            }
+        Some(len) => {
+            print(&format!("Length: {} ({})",
+                           style(len).green(),
+                           style(format!("{}", HumanBytes(len as u64))).red()),
+                  quiet_mode,
+                  false);
+        }
+        None => {
+            print(&format!("Length: {}", style("unknown").red()),
+                  quiet_mode,
+                  false);
+        }
     }
-    
+
     let fname = match filename {
         Some(name) => name,
-        None => url.split('/').last().unwrap(),
+        None => {
+            url.path()
+                .split('/')
+                .last()
+                .unwrap()
+        }
     };
 
 

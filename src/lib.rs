@@ -5,4 +5,5 @@ extern crate reqwest;
 extern crate indicatif;
 
 pub mod http;
-pub mod rgetftp;
+pub mod rftp;
+pub mod utils;

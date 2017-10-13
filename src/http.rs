@@ -7,25 +7,13 @@ use std::io::Write;
 use std::io::BufWriter;
 use std::io::ErrorKind;
 use std::fmt::Display;
-use reqwest::{Client, Url, UrlError};
+use reqwest::{Client, Url};
 use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
 use indicatif::{ProgressBar, ProgressStyle, HumanBytes};
 use console::style;
 
 
-
-fn parse_url(url: &str) -> Result<Url, UrlError> {
-    match Url::parse(url) {
-        Ok(url) => Ok(url),
-        Err(error) if error == UrlError::RelativeUrlWithoutBase => {
-            let url_with_base = format!("{}{}", "http://", url);
-            Url::parse(url_with_base.as_str())
-        }
-        Err(error) => Err(error),
-    }
-
-}
-
+static PBAR_FMT: &'static str = "{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}";
 
 fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File> {
     if resume_download {
@@ -53,9 +41,7 @@ fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> Prog
 
     progbar.set_message(msg);
     if length.is_some() {
-        progbar.set_style(ProgressStyle::default_bar()
-                .template("{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}")
-                .progress_chars("=> "));
+        progbar.set_style(ProgressStyle::default_bar().template(PBAR_FMT).progress_chars("=> "));
     } else {
         progbar.set_style(ProgressStyle::default_spinner());
     }
@@ -64,22 +50,25 @@ fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> Prog
 }
 
 
-pub fn download(target: &str,
-            quiet_mode: bool,
-            filename: Option<&str>,
-            resume_download: bool)
-            -> Result<(), Box<::std::error::Error>> {
+pub fn download(url: Url,
+                quiet_mode: bool,
+                filename: Option<&str>,
+                resume_download: bool)
+                -> Result<(), Box<::std::error::Error>> {
 
     let fname = match filename {
         Some(name) => name,
-        None => target.split('/').last().unwrap(),
+        None => {
+            &url.path()
+                 .split('/')
+                 .last()
+                 .unwrap()
+        }
     };
 
-    // parse url
-    let url = parse_url(target)?;
     let client = Client::new().unwrap();
     let mut resp = if resume_download {
-        let req_headers = client.head(parse_url(target)?)?
+        let req_headers = client.head(url.clone())?
             .send()?
             .headers()
             .clone();
@@ -93,23 +82,23 @@ pub fn download(target: &str,
                     // if byte_count is zero don't pass range header
                     match byte_count {
                         0 => {
-                            client.get(url)?
+                            client.get(url.clone())?
                                 .send()?
                         }
                         _ => {
                             let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
-                            client.get(url)?
+                            client.get(url.clone())?
                                 .header(byte_range)
                                 .send()?
                         }
                     }
                 } else {
-                    client.get(url)?
+                    client.get(url.clone())?
                         .send()?
                 }
             }
             None => {
-                client.get(url)?
+                client.get(url.clone())?
                     .send()?
             }
         }
@@ -117,7 +106,7 @@ pub fn download(target: &str,
         //client.get(url)?.send()?
 
     } else {
-        client.get(url)?
+        client.get(url.clone())?
             .send()?
     };
     print(&format!("HTTP request sent... {}",
@@ -129,7 +118,7 @@ pub fn download(target: &str,
         let headers = if resume_download {
             resp.headers().clone()
         } else {
-            client.get(parse_url(target)?)?
+            client.get(url.clone())?
                 .send()?
                 .headers()
                 .clone()
@@ -211,4 +200,3 @@ fn print<T: Display>(var: &T, quiet_mode: bool, is_error: bool) {
         }
     }
 }
-

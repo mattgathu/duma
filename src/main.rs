@@ -3,9 +3,9 @@ extern crate rget;
 
 use std::process;
 use rget::http;
-use rget::rgetftp;
+use rget::rftp;
+use rget::utils;
 use clap::{Arg, App};
-
 
 
 
@@ -38,29 +38,35 @@ fn main() {
                  .index(1)
                  .help("url to download"))
         .get_matches();
-    let url = args.value_of("URL").unwrap();
+    let url = utils::parse_url(args.value_of("URL").unwrap()).unwrap();
     let quiet_mode = args.is_present("quiet");
     let resume_download = args.is_present("continue");
     let file_name = args.value_of("FILE");
-    if url.contains("ftp://") {
-        match rgetftp::download(url, file_name, quiet_mode) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Got error: {}", e.description());
-                process::exit(1);
+
+    match url.scheme() {
+        "ftp" => {
+            match rftp::download(url, file_name, quiet_mode) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Got error: {}", e.description());
+                    process::exit(1);
+                }
             }
         }
 
-
-    } else {
-        match http::download(url, quiet_mode, file_name, resume_download) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Got error: {}", e.description());
-                process::exit(1);
+        "http" | "https" => {
+            match http::download(url, quiet_mode, file_name, resume_download) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Got error: {}", e.description());
+                    process::exit(1);
+                }
             }
         }
 
+        _ => {
+            eprintln!("Got error: {}", "unsupported url scheme");
+        }
     }
 }
 
@@ -69,7 +75,7 @@ fn main() {
 // #[cfg(test)]
 // mod tests {
 //     use super::*;
-// 
+//
 //     #[test]
 //     fn parse_url_works() {
 //         let error = parse_url("www.mattgathu.github.io");
