@@ -1,6 +1,5 @@
+use std::io::{Error, ErrorKind};
 use reqwest::{Url, UrlError};
-
-
 
 pub fn parse_url(url: &str) -> Result<Url, UrlError> {
     match Url::parse(url) {
@@ -12,4 +11,8 @@ pub fn parse_url(url: &str) -> Result<Url, UrlError> {
         Err(error) => Err(error),
     }
 
+}
+
+pub fn gen_error(msg: String) -> Result<(), Box<::std::error::Error>> {
+    Err(Box::new(Error::new(ErrorKind::Other, msg)))
 }

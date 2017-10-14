@@ -2,9 +2,11 @@ extern crate clap;
 extern crate rget;
 
 use std::process;
+
 use rget::http;
 use rget::rftp;
 use rget::utils;
+
 use clap::{Arg, App};
 
 
@@ -43,45 +45,19 @@ fn main() {
     let resume_download = args.is_present("continue");
     let file_name = args.value_of("FILE");
 
-    match url.scheme() {
-        "ftp" => {
-            match rftp::download(url, file_name, quiet_mode) {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("Got error: {}", e.description());
-                    process::exit(1);
-                }
-            }
-        }
+    let task = match url.scheme() {
+        "ftp" => rftp::download(url, file_name, quiet_mode),
+        "http" | "https" => http::download(url, quiet_mode, file_name, resume_download),
+        _ => utils::gen_error("unsupported url scheme".to_owned())
+    };
 
-        "http" | "https" => {
-            match http::download(url, quiet_mode, file_name, resume_download) {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("Got error: {}", e.description());
-                    process::exit(1);
-                }
-            }
-        }
+    match task {
+        Ok(_) => {},
+        Err(e) => {
+            eprintln!("Got error: {}", e.description());
+            process::exit(1);
 
-        _ => {
-            eprintln!("Got error: {}", "unsupported url scheme");
         }
     }
 }
 
-
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn parse_url_works() {
-//         let error = parse_url("www.mattgathu.github.io");
-//         match error {
-//             Ok(_) => {}
-//             Err(_) => panic!("parse_url failed to parse!"),
-//         };
-//     }
-// }
