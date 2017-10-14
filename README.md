@@ -1,5 +1,4 @@
 ## rget
---
 
 [![Build Status](https://travis-ci.org/mattgathu/rget.svg?branch=master)](https://travis-ci.org/mattgathu/rget)
 [![Build status](https://ci.appveyor.com/api/projects/status/jyr43c87ee78bf7u?svg=true)](https://ci.appveyor.com/project/mattgathu/rget)
@@ -8,10 +7,10 @@ A wget clone written in Rust.
 
 ## features
 
-* support for *http* and *https* downloads
-* support for *ftp* downloads
-* Download *resume* capability
-* download *progress bar*
+* support for **http** and *https* downloads
+* support for **ftp** downloads
+* Download **resume** capability
+* download **progress bar**
 
 ## usage
 
