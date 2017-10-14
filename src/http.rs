@@ -1,53 +1,14 @@
 use std::fs;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::io::BufWriter;
-use std::io::ErrorKind;
-use std::fmt::Display;
 use reqwest::{Client, Url};
 use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
-use indicatif::{ProgressBar, ProgressStyle, HumanBytes};
+use indicatif::HumanBytes;
 use console::style;
 
-
-static PBAR_FMT: &'static str = "{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}";
-
-fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File> {
-    if resume_download {
-        match OpenOptions::new().append(true).open(fname) {
-            Ok(file) => Ok(file),
-            Err(ref error) if error.kind() == ErrorKind::NotFound => {
-                OpenOptions::new().write(true).create(true).open(fname)
-            }
-            Err(error) => Err(error),
-        }
-    } else {
-        OpenOptions::new().write(true).create(true).open(fname)
-    }
-}
-
-fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> ProgressBar {
-    let progbar = if quiet_mode {
-        ProgressBar::hidden()
-    } else {
-        match length {
-            Some(len) => ProgressBar::new(len),
-            None => ProgressBar::new_spinner(),
-        }
-    };
-
-    progbar.set_message(msg);
-    if length.is_some() {
-        progbar.set_style(ProgressStyle::default_bar().template(PBAR_FMT).progress_chars("=> "));
-    } else {
-        progbar.set_style(ProgressStyle::default_spinner());
-    }
-
-    progbar
-}
+use utils::{get_file_handle, print};
+use bar::create_progress_bar;
 
 
 pub fn download(url: Url,
@@ -190,13 +151,3 @@ pub fn download(url: Url,
 
 }
 
-fn print<T: Display>(var: &T, quiet_mode: bool, is_error: bool) {
-    // print if not in quiet mode
-    if !quiet_mode {
-        if is_error {
-            eprintln!("{}", var);
-        } else {
-            println!("{}", var);
-        }
-    }
-}
