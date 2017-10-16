@@ -45,5 +45,3 @@ pub fn print<T: Display>(var: &T, quiet_mode: bool, is_error: bool) {
         }
     }
 }
-
-
