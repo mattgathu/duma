@@ -7,7 +7,7 @@ use rget::http;
 use rget::rftp;
 use rget::utils;
 
-use clap::{Arg, App};
+use clap::{App, Arg};
 
 
 fn main() {
@@ -57,8 +57,7 @@ fn run() -> Result<(), Box<::std::error::Error>> {
     match url.scheme() {
         "ftp" => rftp::download(url, file_name, quiet_mode),
         "http" | "https" => http::download(url, quiet_mode, file_name, resume_download),
-        _ => utils::gen_error(format!("unsupported url scheme '{}'", url.scheme()))
+        _ => utils::gen_error(format!("unsupported url scheme '{}'", url.scheme())),
 
     }
 }
-
