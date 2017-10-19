@@ -53,21 +53,16 @@ pub fn download(url: Url,
           false);
     if resp.status().is_success() {
 
-        let headers = if resume_download {
-            resp.headers().clone()
-        } else {
-            head_resp.headers().clone()
-        };
+        let ct_len = head_resp.headers().get::<ContentLength>().map(|ct_len| **ct_len);
 
-        let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
-
-        let ct_type = headers.get::<ContentType>().unwrap();
+        let ct_type = head_resp.headers().get::<ContentType>().unwrap();
 
         match ct_len {
             Some(len) => {
                 print(&format!("Length: {} ({})",
-                               style(len).green(),
-                               style(format!("{}", HumanBytes(len))).red()),
+                               style(len - byte_count.unwrap_or(0)).green(),
+                               style(format!("{}", HumanBytes(len - byte_count.unwrap_or(0))))
+                                   .red()),
                       quiet_mode,
                       false);
             }
