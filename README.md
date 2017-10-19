@@ -7,7 +7,7 @@ A wget clone written in Rust.
 
 ## features
 
-* support for **http** and *https* downloads
+* support for **http** and **https** downloads
 * support for **ftp** downloads
 * Download **resume** capability
 * download **progress bar**

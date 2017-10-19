@@ -28,48 +28,25 @@ pub fn download(url: Url,
     };
 
     let client = Client::new().unwrap();
-    let mut resp = if resume_download {
-        let req_headers = client.head(url.clone())?
-            .send()?
-            .headers()
-            .clone();
-        match req_headers.get::<AcceptRanges>() {
-            Some(header) => {
-                if header.contains(&RangeUnit::Bytes) {
-                    let byte_count = match fs::metadata(fname) {
-                        Ok(metadata) => metadata.len(),
-                        Err(_) => 0u64,
-                    };
-                    // if byte_count is zero don't pass range header
-                    match byte_count {
-                        0 => {
-                            client.get(url.clone())?
-                                .send()?
-                        }
-                        _ => {
-                            let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
-                            client.get(url.clone())?
-                                .header(byte_range)
-                                .send()?
-                        }
-                    }
-                } else {
-                    client.get(url.clone())?
-                        .send()?
-                }
-            }
-            None => {
-                client.get(url.clone())?
-                    .send()?
-            }
-        }
-
-        //client.get(url)?.send()?
-
-    } else {
-        client.get(url.clone())?
-            .send()?
+    let head_resp = client.head(url.clone())?
+        .send()?;
+    let supports_bytes = match head_resp.headers().get::<AcceptRanges>() {
+        Some(header) => header.contains(&RangeUnit::Bytes),
+        None => false,
     };
+    let byte_count = if supports_bytes {
+        match fs::metadata(fname) {
+            Ok(metadata) => Some(metadata.len()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let mut req = client.get(url.clone())?;
+    if byte_count.is_some() && resume_download {
+        req.header(Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count.unwrap())]));
+    }
+    let mut resp = req.send()?;
     print(&format!("HTTP request sent... {}",
                    style(format!("{}", resp.status())).green()),
           quiet_mode,
@@ -79,11 +56,9 @@ pub fn download(url: Url,
         let headers = if resume_download {
             resp.headers().clone()
         } else {
-            client.get(url.clone())?
-                .send()?
-                .headers()
-                .clone()
+            head_resp.headers().clone()
         };
+
         let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
 
         let ct_type = headers.get::<ContentType>().unwrap();
@@ -150,4 +125,3 @@ pub fn download(url: Url,
     Ok(())
 
 }
-
