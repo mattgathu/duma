@@ -14,7 +14,7 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("rget: {}", e);
+            eprintln!("error: {}", e);
             process::exit(1);
         }
     }

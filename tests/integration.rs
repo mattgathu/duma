@@ -20,7 +20,7 @@ mod integration {
             .with_args(&["wwww.shouldnotwork.com"])
             .fails()
             .and()
-            .prints_error("Got error:")
+            .prints_error("error:")
             .unwrap();
     }
 }
