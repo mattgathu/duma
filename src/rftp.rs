@@ -65,7 +65,7 @@ pub fn download(url: Url,
             let len_u64 = len as u64;
             Some(len_u64)
         }
-        None => None
+        None => None,
     };
 
 

@@ -22,5 +22,3 @@ pub fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> 
 
     progbar
 }
-
-
