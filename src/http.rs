@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use std::io::BufWriter;
 use std::io::SeekFrom;
 use reqwest::{Client, Url};
-use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
+use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, ContentType, Range, RangeUnit};
 use indicatif::HumanBytes;
 use console::style;
 use num_cpus::get as get_cpus_num;
@@ -79,71 +79,41 @@ pub fn download(url: Url,
     };
 
     let client = Client::new().unwrap();
-    let mut resp = if resume_download {
-        let req_headers = client.head(url.clone())?
-            .send()?
-            .headers()
-            .clone();
-        match req_headers.get::<AcceptRanges>() {
-            Some(header) => {
-                if header.contains(&RangeUnit::Bytes) {
-                    let byte_count = match fs::metadata(fname) {
-                        Ok(metadata) => metadata.len(),
-                        Err(_) => 0u64,
-                    };
-                    // if byte_count is zero don't pass range header
-                    match byte_count {
-                        0 => {
-                            client.get(url.clone())?
-                                .send()?
-                        }
-                        _ => {
-                            let byte_range = Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count)]);
-                            client.get(url.clone())?
-                                .header(byte_range)
-                                .send()?
-                        }
-                    }
-                } else {
-                    client.get(url.clone())?
-                        .send()?
-                }
-            }
-            None => {
-                client.get(url.clone())?
-                    .send()?
-            }
-        }
-
-        //client.get(url)?.send()?
-
-    } else {
-        client.get(url.clone())?
-            .send()?
+    let head_resp = client.head(url.clone())?
+        .send()?;
+    let supports_bytes = match head_resp.headers().get::<AcceptRanges>() {
+        Some(header) => header.contains(&RangeUnit::Bytes),
+        None => false,
     };
+    let byte_count = if supports_bytes {
+        match fs::metadata(fname) {
+            Ok(metadata) => Some(metadata.len()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let mut req = client.get(url.clone())?;
+    if byte_count.is_some() && resume_download {
+        req.header(Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count.unwrap())]));
+    }
+    let mut resp = req.send()?;
     print(&format!("HTTP request sent... {}",
                    style(format!("{}", resp.status())).green()),
           quiet_mode,
           false);
     if resp.status().is_success() {
 
-        let headers = if resume_download {
-            resp.headers().clone()
-        } else {
-            client.get(url.clone())?
-                .send()?
-                .headers()
-                .clone()
-        };
-        let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
+        let ct_len = head_resp.headers().get::<ContentLength>().map(|ct_len| **ct_len);
 
-        let ct_type = headers.get::<ContentType>().unwrap();
+        let ct_type = head_resp.headers().get::<ContentType>().unwrap();
 
         match ct_len {
             Some(len) => {
                 print(&format!("Length: {} ({})",
-                               style(len).green(),
-                               style(format!("{}", HumanBytes(len))).red()),
+                               style(len - byte_count.unwrap_or(0)).green(),
+                               style(format!("{}", HumanBytes(len - byte_count.unwrap_or(0))))
+                                   .red()),
                       quiet_mode,
                       false);
             }

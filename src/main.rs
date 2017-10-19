@@ -7,11 +7,20 @@ use rget::http;
 use rget::rftp;
 use rget::utils;
 
-use clap::{Arg, App};
-
+use clap::{App, Arg};
 
 
 fn main() {
+    match run() {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("error: {}", e);
+            process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<(), Box<::std::error::Error>> {
     let args = App::new("Rget")
         .version("0.1.0")
         .author("Matt Gathu <mattgathu@gmail.com>")
@@ -46,26 +55,15 @@ fn main() {
                  .index(1)
                  .help("url to download"))
         .get_matches();
-    let url = utils::parse_url(args.value_of("URL").unwrap()).unwrap();
+    let url = utils::parse_url(args.value_of("URL").unwrap())?;
     let quiet_mode = args.is_present("quiet");
     let resume_download = args.is_present("continue");
     let file_name = args.value_of("FILE");
     let multithread = args.is_present("multithread");
 
-    let task = match url.scheme() {
+    match url.scheme() {
         "ftp" => rftp::download(url, file_name, quiet_mode),
-        "http" | "https" => {
-            http::download(url, quiet_mode, file_name, resume_download, multithread)
-        }
-        _ => utils::gen_error("unsupported url scheme".to_owned()),
-    };
-
-    match task {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Got error: {}", e.description());
-            process::exit(1);
-
-        }
+        "http" | "https" => http::download(url, quiet_mode, file_name, resume_download),
+        _ => utils::gen_error(format!("unsupported url scheme '{}'", url.scheme())),
     }
 }
