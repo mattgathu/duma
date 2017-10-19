@@ -3,7 +3,7 @@ use std::io::Read;
 use std::io::Write;
 use std::io::BufWriter;
 use reqwest::{Client, Url};
-use reqwest::header::{Range, ByteRangeSpec, ContentLength, ContentType, AcceptRanges, RangeUnit};
+use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, ContentType, Range, RangeUnit};
 use indicatif::HumanBytes;
 use console::style;
 
