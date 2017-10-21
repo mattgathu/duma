@@ -1,4 +1,5 @@
 use std::fs;
+use std::env;
 use std::io::Read;
 use std::io::Write;
 use std::io::Seek;
@@ -6,7 +7,7 @@ use std::thread;
 use std::sync::mpsc;
 use std::io::BufWriter;
 use std::io::SeekFrom;
-use reqwest::{Client, Url};
+use reqwest::{Client, Proxy, Url};
 use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, ContentType, Range, RangeUnit};
 use indicatif::HumanBytes;
 use console::style;
@@ -14,6 +15,24 @@ use num_cpus::get as get_cpus_num;
 
 use utils::{get_file_handle, print};
 use bar::create_progress_bar;
+
+
+fn get_reqwest_client() -> Result<(Client), Box<::std::error::Error>> {
+    let http_proxy = env::var("http_proxy");
+    let https_proxy = env::var("https_proxy");
+
+    let mut builder = Client::builder()?;
+
+    if http_proxy.is_ok() {
+        builder.proxy(Proxy::http(Url::parse(&http_proxy.unwrap())?)?);
+    }
+
+    if https_proxy.is_ok() {
+        builder.proxy(Proxy::https(Url::parse(&https_proxy.unwrap())?)?);
+    }
+
+    Ok(builder.build()?)
+}
 
 
 fn get_chunk_sizes(ct_len: u64) -> Vec<(u64, u64)> {
@@ -37,7 +56,7 @@ fn download_chunk(url: Url,
                   offsets: (u64, u64),
                   progress_sender: mpsc::Sender<(u64, u64, Vec<u8>)>)
                   -> Result<(), Box<::std::error::Error>> {
-    let client = Client::new().unwrap();
+    let client = get_reqwest_client()?;
     let byte_range = Range::Bytes(vec![ByteRangeSpec::FromTo(offsets.0, offsets.1)]);
     let mut resp = client.get(url)?
         .header(byte_range)
@@ -78,7 +97,7 @@ pub fn download(url: Url,
         }
     };
 
-    let client = Client::new().unwrap();
+    let client = get_reqwest_client()?;
     let head_resp = client.head(url.clone())?
         .send()?;
     let supports_bytes = match head_resp.headers().get::<AcceptRanges>() {
