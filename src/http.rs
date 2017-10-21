@@ -1,20 +1,71 @@
 use std::fs;
 use std::io::Read;
 use std::io::Write;
+use std::io::Seek;
+use std::thread;
+use std::sync::mpsc;
 use std::io::BufWriter;
+use std::io::SeekFrom;
 use reqwest::{Client, Url};
 use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, ContentType, Range, RangeUnit};
 use indicatif::HumanBytes;
 use console::style;
+use num_cpus::get as get_cpus_num;
 
 use utils::{get_file_handle, print};
 use bar::create_progress_bar;
 
 
+fn get_chunk_sizes(ct_len: u64) -> Vec<(u64, u64)> {
+    let cpus = get_cpus_num() as u64;
+    let chunk_size = ct_len / cpus;
+    let mut sizes = Vec::new();
+
+    for core in 0..cpus {
+        let bound = if core == cpus - 1 {
+            ct_len
+        } else {
+            ((core + 1) * chunk_size) - 1
+        };
+        sizes.push((core * chunk_size, bound));
+    }
+
+    sizes
+}
+
+fn download_chunk(url: Url,
+                  offsets: (u64, u64),
+                  progress_sender: mpsc::Sender<(u64, u64, Vec<u8>)>)
+                  -> Result<(), Box<::std::error::Error>> {
+    let client = Client::new().unwrap();
+    let byte_range = Range::Bytes(vec![ByteRangeSpec::FromTo(offsets.0, offsets.1)]);
+    let mut resp = client.get(url)?
+        .header(byte_range)
+        .send()?;
+    let chunk_sz = offsets.1 - offsets.0;
+    let mut start_offset = offsets.0;
+
+    loop {
+        let mut buf = vec![0; chunk_sz as usize];
+        let byte_count = resp.read(&mut buf[..]).unwrap();
+        buf.truncate(byte_count);
+        if !buf.is_empty() {
+            progress_sender.send((byte_count as u64, start_offset, buf.clone())).unwrap();
+            start_offset += byte_count as u64;
+        } else {
+            break;
+        }
+    }
+
+    Ok(())
+
+}
+
 pub fn download(url: Url,
                 quiet_mode: bool,
                 filename: Option<&str>,
-                resume_download: bool)
+                resume_download: bool,
+                multithread: bool)
                 -> Result<(), Box<::std::error::Error>> {
 
     let fname = match filename {
@@ -97,15 +148,40 @@ pub fn download(url: Url,
             pbar.inc(metadata.len());
         }
 
-        loop {
-            let mut buffer = vec![0; chunk_size];
-            let bcount = resp.read(&mut buffer[..]).unwrap();
-            buffer.truncate(bcount);
-            if !buffer.is_empty() {
-                writer.write_all(buffer.as_slice()).unwrap();
-                pbar.inc(bcount as u64);
-            } else {
-                break;
+        if ct_len.is_some() && multithread {
+            let (tx, rx) = mpsc::channel();
+            for offsets in get_chunk_sizes(ct_len.unwrap()) {
+                let url = url.clone();
+                let tx = tx.clone();
+                thread::spawn(move || { download_chunk(url, offsets, tx).unwrap(); });
+            }
+
+            let mut progress_state = 0;
+
+            loop {
+                if progress_state == ct_len.unwrap() {
+                    break;
+                } else {
+                    let (byte_count, offset, buf) = rx.recv().unwrap();
+                    writer.seek(SeekFrom::Start(offset))?;
+                    writer.write_all(buf.as_slice()).unwrap();
+                    progress_state += byte_count;
+                    pbar.inc(byte_count);
+                }
+            }
+
+        } else {
+
+            loop {
+                let mut buffer = vec![0; chunk_size];
+                let bcount = resp.read(&mut buffer[..]).unwrap();
+                buffer.truncate(bcount);
+                if !buffer.is_empty() {
+                    writer.write_all(buffer.as_slice()).unwrap();
+                    pbar.inc(bcount as u64);
+                } else {
+                    break;
+                }
             }
         }
 

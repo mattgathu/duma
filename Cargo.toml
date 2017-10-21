@@ -9,6 +9,7 @@ indicatif = "0.7.0"
 console = "0.5.0"
 clap = "2.26.0"
 ftp = "2.2.1"
+num_cpus = "1.0"
 
 [dev-dependencies]
 assert_cli = "0.4"
