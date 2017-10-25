@@ -63,7 +63,9 @@ fn run() -> Result<(), Box<::std::error::Error>> {
 
     match url.scheme() {
         "ftp" => rftp::download(url, file_name, quiet_mode),
-        "http" | "https" => http::download(url, quiet_mode, file_name, resume_download, multithread),
+        "http" | "https" => {
+            http::download(url, quiet_mode, file_name, resume_download, multithread)
+        }
         _ => utils::gen_error(format!("unsupported url scheme '{}'", url.scheme())),
     }
 }
