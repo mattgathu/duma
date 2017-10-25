@@ -89,10 +89,11 @@ pub fn download(url: Url,
     let fname = match filename {
         Some(name) => name,
         None => {
-            &url.path()
-                 .split('/')
-                 .last()
-                 .unwrap()
+            let name = &url.path()
+                            .split('/')
+                            .last()
+                            .unwrap();
+            if !name.is_empty() { name } else { "index.html" }
         }
     };
 
@@ -129,7 +130,7 @@ pub trait Events {
 
 pub struct Downloader {
     url: Url,
-    buf: BufWriter<fs::File>,
+    buf: Option<BufWriter<fs::File>>,
     multithread: bool,
     resume: bool,
     chunk_sz: usize,
@@ -148,10 +149,9 @@ impl fmt::Debug for Downloader {
 
 impl Downloader {
     pub fn new(url: Url, fname: &str, multithread: bool, resume: bool) -> Downloader {
-        let buf = BufWriter::new(get_file_handle(fname, resume).unwrap());
         Downloader {
             url: url,
-            buf: buf,
+            buf: None,
             multithread: multithread,
             resume: resume,
             chunk_sz: 1024,
@@ -165,6 +165,7 @@ impl Downloader {
         let mut req = client.get(self.url.clone())?;
         let head_resp = client.head(self.url.clone())?
             .send()?;
+        self.buf = Some(BufWriter::new(get_file_handle(&self.fname, self.resume).unwrap()));
 
         if self.resume {
             let head_resp = client.head(self.url.clone())?
@@ -261,9 +262,15 @@ impl Downloader {
                  -> Result<(), Box<::std::error::Error>> {
         let byte_count = contents.len() as u64;
         if offset.is_some() {
-            self.buf.seek(SeekFrom::Start(offset.unwrap()))?;
+            self.buf
+                .as_mut()
+                .unwrap()
+                .seek(SeekFrom::Start(offset.unwrap()))?;
         }
-        self.buf.write_all(contents)?;
+        self.buf
+            .as_mut()
+            .unwrap()
+            .write_all(contents)?;
 
         for hk in &self.hooks {
             hk.borrow_mut().on_bufwrite(byte_count);
