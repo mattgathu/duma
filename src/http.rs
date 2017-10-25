@@ -98,7 +98,7 @@ pub fn download(url: Url,
     };
 
 
-    let mut client = Downloader::new(url.clone(), fname, multithread, resume_download);
+    let mut client = Download::new(url.clone(), fname, multithread, resume_download);
     if !quiet_mode {
         let events_handler = DownloadEventsHandler::new(fname);
         client.events_hook(events_handler).download()?;
@@ -128,7 +128,7 @@ pub trait Events {
     fn on_finish(&mut self) {}
 }
 
-pub struct Downloader {
+pub struct Download {
     url: Url,
     buf: Option<BufWriter<fs::File>>,
     multithread: bool,
@@ -138,18 +138,18 @@ pub struct Downloader {
     fname: String,
 }
 
-impl fmt::Debug for Downloader {
+impl fmt::Debug for Download {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
-               "Downloader {{ url: {}, multithread: {} }}",
+               "Download {{ url: {}, multithread: {} }}",
                self.url,
                self.multithread)
     }
 }
 
-impl Downloader {
-    pub fn new(url: Url, fname: &str, multithread: bool, resume: bool) -> Downloader {
-        Downloader {
+impl Download {
+    pub fn new(url: Url, fname: &str, multithread: bool, resume: bool) -> Download {
+        Download {
             url: url,
             buf: None,
             multithread: multithread,
@@ -235,7 +235,7 @@ impl Downloader {
         Ok(())
     }
 
-    pub fn events_hook<E: Events + 'static>(&mut self, hk: E) -> &mut Downloader {
+    pub fn events_hook<E: Events + 'static>(&mut self, hk: E) -> &mut Download {
         self.hooks.push(RefCell::new(Box::new(hk)));
         self
     }
