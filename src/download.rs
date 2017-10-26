@@ -9,7 +9,7 @@ use reqwest::header::{ContentLength, ContentType, Headers};
 
 use utils::get_file_handle;
 use bar::create_progress_bar;
-use core::{Events, HttpDownload, FtpDownload};
+use core::{Events, FtpDownload, HttpDownload};
 
 
 pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<Error>> {
@@ -38,11 +38,11 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Resul
 }
 
 pub fn http_download(url: Url,
-                quiet_mode: bool,
-                filename: Option<&str>,
-                resume_download: bool,
-                multithread: bool)
-                -> Result<(), Box<Error>> {
+                     quiet_mode: bool,
+                     filename: Option<&str>,
+                     resume_download: bool,
+                     multithread: bool)
+                     -> Result<(), Box<Error>> {
     let fname = match filename {
         Some(name) => name,
         None => {
