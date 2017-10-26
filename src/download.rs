@@ -12,25 +12,30 @@ use bar::create_progress_bar;
 use core::{Events, FtpDownload, HttpDownload};
 
 
-pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<Error>> {
-    let fname = match filename {
-        Some(name) => name,
+fn gen_filename(url: &Url, fname: Option<&str>) -> String {
+    match fname {
+        Some(name) => name.to_owned(),
         None => {
             let name = &url.path()
                             .split('/')
                             .last()
                             .unwrap();
-            if !name.is_empty() { name } else { "index.html" }
+            if !name.is_empty() { format!("{}", name) } else { "index.html".to_owned() }
         }
-    };
+    }
 
+
+}
+
+pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<Error>> {
+    let fname = gen_filename(&url, filename);
 
     let mut client = FtpDownload::new(url.clone());
     if !quiet_mode {
-        let events_handler = DownloadEventsHandler::new(fname);
+        let events_handler = DownloadEventsHandler::new(&fname);
         client.events_hook(events_handler).download()?;
     } else {
-        let events_handler = QuietModeEventsHandler::new(fname);
+        let events_handler = QuietModeEventsHandler::new(&fname);
         client.events_hook(events_handler).download()?;
     }
     Ok(())
@@ -43,24 +48,14 @@ pub fn http_download(url: Url,
                      resume_download: bool,
                      multithread: bool)
                      -> Result<(), Box<Error>> {
-    let fname = match filename {
-        Some(name) => name,
-        None => {
-            let name = &url.path()
-                            .split('/')
-                            .last()
-                            .unwrap();
-            if !name.is_empty() { name } else { "index.html" }
-        }
-    };
+    let fname = gen_filename(&url, filename);
 
-
-    let mut client = HttpDownload::new(url.clone(), fname, multithread, resume_download);
+    let mut client = HttpDownload::new(url.clone(), &fname, multithread, resume_download);
     if !quiet_mode {
-        let events_handler = DownloadEventsHandler::new(fname);
+        let events_handler = DownloadEventsHandler::new(&fname);
         client.events_hook(events_handler).download()?;
     } else {
-        let events_handler = QuietModeEventsHandler::new(fname);
+        let events_handler = QuietModeEventsHandler::new(&fname);
         client.events_hook(events_handler).download()?;
     }
     Ok(())
@@ -84,6 +79,27 @@ impl DownloadEventsHandler {
             file: BufWriter::new(get_file_handle(fname, false).unwrap()),
         }
     }
+
+    fn create_prog_bar(&mut self, length: Option<u64>) {
+        let byte_count = self.bytes_on_disk;
+        if let Some(len) = length {
+            let exact = style(len - byte_count.unwrap_or(0)).green();
+            let human_readable = style(format!("{}", HumanBytes(len - byte_count.unwrap_or(0))))
+                .red();
+
+            println!("Length: {} ({})", exact, human_readable);
+        } else {
+            println!("Length: {}", style("unknown").red());
+        }
+
+        let prog_bar = create_progress_bar(false, &self.fname, length);
+        if byte_count.is_some() {
+            prog_bar.inc(byte_count.unwrap());
+        }
+        self.prog_bar = Some(prog_bar);
+
+
+    }
 }
 
 impl Events for DownloadEventsHandler {
@@ -94,45 +110,11 @@ impl Events for DownloadEventsHandler {
         println!("Saving to: {}", style(&self.fname).green());
         let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
 
-        let byte_count = self.bytes_on_disk;
-        match ct_len {
-            Some(len) => {
-                let exact = style(len - byte_count.unwrap_or(0)).green();
-                let human_readable =
-                    style(format!("{}", HumanBytes(len - byte_count.unwrap_or(0)))).red();
-
-                println!("Length: {} ({})", exact, human_readable);
-            }
-            None => {
-                println!("Length: {}", style("unknown").red());
-            }
-        }
-
-        let prog_bar = create_progress_bar(false, &self.fname, ct_len);
-        if byte_count.is_some() {
-            prog_bar.inc(byte_count.unwrap());
-        }
-        self.prog_bar = Some(prog_bar);
+        self.create_prog_bar(ct_len);
     }
 
     fn on_ftp_content_length(&mut self, ct_len: Option<u64>) {
-        let byte_count = self.bytes_on_disk;
-        if let Some(len) = ct_len {
-            let exact = style(len - byte_count.unwrap_or(0)).green();
-            let human_readable = style(format!("{}", HumanBytes(len - byte_count.unwrap_or(0))))
-                .red();
-
-            println!("Length: {} ({})", exact, human_readable);
-        } else {
-            println!("Length: {}", style("unknown").red());
-        }
-
-        let prog_bar = create_progress_bar(false, &self.fname, ct_len);
-        if byte_count.is_some() {
-            prog_bar.inc(byte_count.unwrap());
-        }
-        self.prog_bar = Some(prog_bar);
-
+        self.create_prog_bar(ct_len);
     }
 
     fn on_content(&mut self, content: &[u8], offset: Option<u64>) -> Result<(), Box<Error>> {
