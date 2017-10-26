@@ -3,8 +3,7 @@ extern crate rget;
 
 use std::process;
 
-use rget::http;
-use rget::rftp;
+use rget::download::{ftp_download, http_download};
 use rget::utils;
 
 use clap::{App, Arg};
@@ -62,8 +61,8 @@ fn run() -> Result<(), Box<::std::error::Error>> {
     let multithread = args.is_present("multithread");
 
     match url.scheme() {
-        "ftp" => rftp::download(url, file_name, quiet_mode),
-        "http" | "https" => http::download(url, quiet_mode, file_name, resume_download, multithread),
+        "ftp" => ftp_download(url, quiet_mode, file_name),
+        "http" | "https" => http_download(url, quiet_mode, file_name, resume_download, multithread),
         _ => utils::gen_error(format!("unsupported url scheme '{}'", url.scheme())),
     }
 }
