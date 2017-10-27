@@ -1,4 +1,3 @@
-use std::fs;
 use std::io::{BufWriter, Write};
 use std::error::Error;
 
@@ -66,7 +65,7 @@ pub struct DownloadEventsHandler {
     prog_bar: Option<ProgressBar>,
     bytes_on_disk: Option<u64>,
     fname: String,
-    file: BufWriter<fs::File>,
+    file: BufWriter<Box<Write>>,
 }
 
 impl DownloadEventsHandler {
@@ -148,7 +147,7 @@ impl Events for DownloadEventsHandler {
 }
 
 struct QuietModeEventsHandler {
-    file: BufWriter<fs::File>,
+    file: BufWriter<Box<Write>>,
 }
 
 impl QuietModeEventsHandler {
