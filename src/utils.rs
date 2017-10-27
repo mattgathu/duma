@@ -1,8 +1,8 @@
 use std::io;
-use std::fs::File;
+use std::path::Path;
 use std::fmt::Display;
 use std::fs::OpenOptions;
-use std::io::{Error, ErrorKind};
+use std::io::{Error, ErrorKind, Write};
 use reqwest::{Url, UrlError};
 
 pub fn parse_url(url: &str) -> Result<Url, UrlError> {
@@ -21,17 +21,20 @@ pub fn gen_error(msg: String) -> Result<(), Box<::std::error::Error>> {
     Err(Box::new(Error::new(ErrorKind::Other, msg)))
 }
 
-pub fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File> {
-    if resume_download {
+pub fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<Box<Write>> {
+    if fname == "-" {
+        return Ok(Box::new(io::stdout()))
+    }
+    if resume_download && Path::new(fname).exists() {
         match OpenOptions::new().append(true).open(fname) {
-            Ok(file) => Ok(file),
-            Err(ref error) if error.kind() == ErrorKind::NotFound => {
-                OpenOptions::new().write(true).create(true).open(fname)
-            }
+            Ok(file) => Ok(Box::new(file)),
             Err(error) => Err(error),
         }
     } else {
-        OpenOptions::new().write(true).create(true).open(fname)
+        match OpenOptions::new().write(true).create(true).open(fname) {
+            Ok(file) => Ok(Box::new(file)),
+            Err(error) => Err(error)
+        }
     }
 }
 
