@@ -31,10 +31,10 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Resul
 
     let mut client = FtpDownload::new(url.clone());
     if !quiet_mode {
-        let events_handler = DownloadEventsHandler::new(&fname);
+        let events_handler = DownloadEventsHandler::new(&fname, false);
         client.events_hook(events_handler).download()?;
     } else {
-        let events_handler = QuietModeEventsHandler::new(&fname);
+        let events_handler = QuietModeEventsHandler::new(&fname, false);
         client.events_hook(events_handler).download()?;
     }
     Ok(())
@@ -50,10 +50,10 @@ pub fn http_download(url: Url,
 
     let mut client = HttpDownload::new(url.clone(), &fname, resume_download);
     if !quiet_mode {
-        let events_handler = DownloadEventsHandler::new(&fname);
+        let events_handler = DownloadEventsHandler::new(&fname, resume_download);
         client.events_hook(events_handler).download()?;
     } else {
-        let events_handler = QuietModeEventsHandler::new(&fname);
+        let events_handler = QuietModeEventsHandler::new(&fname, resume_download);
         client.events_hook(events_handler).download()?;
     }
     Ok(())
@@ -69,12 +69,12 @@ pub struct DownloadEventsHandler {
 }
 
 impl DownloadEventsHandler {
-    pub fn new(fname: &str) -> DownloadEventsHandler {
+    pub fn new(fname: &str, resume: bool) -> DownloadEventsHandler {
         DownloadEventsHandler {
             prog_bar: None,
             bytes_on_disk: None,
             fname: fname.to_owned(),
-            file: BufWriter::new(get_file_handle(fname, false).unwrap()),
+            file: BufWriter::new(get_file_handle(fname, resume).unwrap()),
         }
     }
 
@@ -151,8 +151,8 @@ struct QuietModeEventsHandler {
 }
 
 impl QuietModeEventsHandler {
-    pub fn new(fname: &str) -> Self {
-        Self { file: BufWriter::new(get_file_handle(fname, false).unwrap()) }
+    pub fn new(fname: &str, resume: bool) -> Self {
+        Self { file: BufWriter::new(get_file_handle(fname, resume).unwrap()) }
     }
 }
 
