@@ -1,15 +1,12 @@
 use std::fs;
 use std::env;
 use std::fmt;
-use std::thread;
-use std::sync::mpsc;
 use std::error::Error;
 use std::cell::RefCell;
 use std::io::Read;
 
-use num_cpus::get as get_cpus_num;
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
-use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, Headers, Range, RangeUnit};
+use reqwest::header::{AcceptRanges, ByteRangeSpec, Headers, Range, RangeUnit};
 
 use ftp::FtpStream;
 
@@ -22,7 +19,7 @@ pub trait Events {
 
     fn on_headers(&mut self, headers: Headers) {}
 
-    fn on_content(&mut self, content: &[u8], offset: Option<u64>) -> Result<(), Box<Error>> {
+    fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {
         Ok(())
     }
 
@@ -89,7 +86,7 @@ impl FtpDownload {
             let bcount = reader.read(&mut buffer[..]).unwrap();
             buffer.truncate(bcount);
             if !buffer.is_empty() {
-                self.send_content(buffer.as_slice(), None)?;
+                self.send_content(buffer.as_slice())?;
             } else {
                 break;
             }
@@ -100,12 +97,11 @@ impl FtpDownload {
         }
 
         Ok(())
-
-
     }
-    fn send_content(&self, contents: &[u8], offset: Option<u64>) -> Result<(), Box<Error>> {
+
+    fn send_content(&self, contents: &[u8]) -> Result<(), Box<Error>> {
         for hk in &self.hooks {
-            hk.borrow_mut().on_content(contents, offset)?;
+            hk.borrow_mut().on_content(contents)?;
         }
         Ok(())
     }
@@ -117,7 +113,6 @@ impl FtpDownload {
 
 pub struct HttpDownload {
     url: Url,
-    multithread: bool,
     resume: bool,
     chunk_sz: usize,
     hooks: Vec<RefCell<Box<Events>>>,
@@ -127,17 +122,15 @@ pub struct HttpDownload {
 impl fmt::Debug for HttpDownload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
-               "HttpDownload {{ url: {}, multithread: {} }}",
-               self.url,
-               self.multithread)
+               "HttpDownload url: {}",
+               self.url)
     }
 }
 
 impl HttpDownload {
-    pub fn new(url: Url, fname: &str, multithread: bool, resume: bool) -> HttpDownload {
+    pub fn new(url: Url, fname: &str, resume: bool) -> HttpDownload {
         HttpDownload {
             url: url,
-            multithread: multithread,
             resume: resume,
             chunk_sz: 1024,
             hooks: Vec::new(),
@@ -180,11 +173,7 @@ impl HttpDownload {
             for hk in &self.hooks {
                 hk.borrow_mut().on_headers(headers.clone());
             }
-            if self.multithread {
-                self.multithread_download(&resp)?;
-            } else {
-                self.singlethread_download(&mut resp)?;
-            }
+            self.singlethread_download(&mut resp)?;
         } else {
             for hk in &self.hooks {
                 hk.borrow_mut().on_failure_status(resp.status());
@@ -195,27 +184,6 @@ impl HttpDownload {
             hook.borrow_mut().on_finish();
         }
 
-        Ok(())
-    }
-
-    fn multithread_download(&mut self, resp: &Response) -> Result<(), Box<Error>> {
-        let ct_len = resp.headers().get::<ContentLength>().map(|ct_len| **ct_len);
-        let (tx, rx) = mpsc::channel();
-        for offsets in Self::get_chunk_sizes(ct_len.unwrap()) {
-            let url = self.url.clone();
-            let tx = tx.clone();
-            thread::spawn(move || { Self::download_chunk(url, offsets, tx).unwrap(); });
-        }
-        let mut bytes_recv = 0;
-        loop {
-            if bytes_recv == ct_len.unwrap() {
-                break;
-            } else {
-                let (byte_count, offset, buf) = rx.recv().unwrap();
-                self.send_content(buf.as_slice(), Some(offset))?;
-                bytes_recv += byte_count;
-            }
-        }
         Ok(())
     }
 
@@ -230,7 +198,7 @@ impl HttpDownload {
             let bcount = resp.read(&mut buffer[..]).unwrap();
             buffer.truncate(bcount);
             if !buffer.is_empty() {
-                self.send_content(buffer.as_slice(), None)?;
+                self.send_content(buffer.as_slice())?;
             } else {
                 break;
             }
@@ -238,9 +206,9 @@ impl HttpDownload {
         Ok(())
     }
 
-    fn send_content(&mut self, contents: &[u8], offset: Option<u64>) -> Result<(), Box<Error>> {
+    fn send_content(&mut self, contents: &[u8]) -> Result<(), Box<Error>> {
         for hk in &self.hooks {
-            hk.borrow_mut().on_content(contents, offset)?;
+            hk.borrow_mut().on_content(contents)?;
         }
 
         Ok(())
@@ -261,48 +229,5 @@ impl HttpDownload {
 
         Ok(builder.build()?)
     }
-    fn get_chunk_sizes(ct_len: u64) -> Vec<(u64, u64)> {
-        let cpus = get_cpus_num() as u64;
-        let chunk_size = ct_len / cpus;
-        let mut sizes = Vec::new();
-
-        for core in 0..cpus {
-            let bound = if core == cpus - 1 {
-                ct_len
-            } else {
-                ((core + 1) * chunk_size) - 1
-            };
-            sizes.push((core * chunk_size, bound));
-        }
-
-        sizes
-    }
-
-    fn download_chunk(url: Url,
-                      offsets: (u64, u64),
-                      progress_sender: mpsc::Sender<(u64, u64, Vec<u8>)>)
-                      -> Result<(), Box<Error>> {
-        let client = Self::get_reqwest_client()?;
-        let byte_range = Range::Bytes(vec![ByteRangeSpec::FromTo(offsets.0, offsets.1)]);
-        let mut resp = client.get(url)?
-            .header(byte_range)
-            .send()?;
-        let chunk_sz = offsets.1 - offsets.0;
-        let mut start_offset = offsets.0;
-
-        loop {
-            let mut buf = vec![0; chunk_sz as usize];
-            let byte_count = resp.read(&mut buf[..]).unwrap();
-            buf.truncate(byte_count);
-            if !buf.is_empty() {
-                progress_sender.send((byte_count as u64, start_offset, buf.clone())).unwrap();
-                start_offset += byte_count as u64;
-            } else {
-                break;
-            }
-        }
-
-        Ok(())
-
-    }
+    
 }

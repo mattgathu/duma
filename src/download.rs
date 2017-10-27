@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Write};
 use std::error::Error;
 
 use console::style;
@@ -45,12 +45,11 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Resul
 pub fn http_download(url: Url,
                      quiet_mode: bool,
                      filename: Option<&str>,
-                     resume_download: bool,
-                     multithread: bool)
+                     resume_download: bool)
                      -> Result<(), Box<Error>> {
     let fname = gen_filename(&url, filename);
 
-    let mut client = HttpDownload::new(url.clone(), &fname, multithread, resume_download);
+    let mut client = HttpDownload::new(url.clone(), &fname, resume_download);
     if !quiet_mode {
         let events_handler = DownloadEventsHandler::new(&fname);
         client.events_hook(events_handler).download()?;
@@ -117,11 +116,8 @@ impl Events for DownloadEventsHandler {
         self.create_prog_bar(ct_len);
     }
 
-    fn on_content(&mut self, content: &[u8], offset: Option<u64>) -> Result<(), Box<Error>> {
+    fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {
         let byte_count = content.len() as u64;
-        if offset.is_some() {
-            self.file.seek(SeekFrom::Start(offset.unwrap()))?;
-        }
         self.file.write_all(content)?;
         self.prog_bar
             .as_mut()
@@ -162,10 +158,7 @@ impl QuietModeEventsHandler {
 }
 
 impl Events for QuietModeEventsHandler {
-    fn on_content(&mut self, content: &[u8], offset: Option<u64>) -> Result<(), Box<Error>> {
-        if offset.is_some() {
-            self.file.seek(SeekFrom::Start(offset.unwrap()))?;
-        }
+    fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {
         self.file.write_all(content)?;
 
         Ok(())

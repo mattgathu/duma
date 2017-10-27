@@ -36,12 +36,6 @@ fn run() -> Result<(), Box<::std::error::Error>> {
                  .help("resume getting a partially-downloaded file")
                  .required(false)
                  .takes_value(false))
-        .arg(Arg::with_name("multithread")
-                 .short("M")
-                 .long("multithread")
-                 .help("use multithreading for faster download (no resume capability)")
-                 .required(false)
-                 .takes_value(false))
         .arg(Arg::with_name("FILE")
                  .short("O")
                  .long("output-document")
@@ -58,11 +52,10 @@ fn run() -> Result<(), Box<::std::error::Error>> {
     let quiet_mode = args.is_present("quiet");
     let resume_download = args.is_present("continue");
     let file_name = args.value_of("FILE");
-    let multithread = args.is_present("multithread");
 
     match url.scheme() {
         "ftp" => ftp_download(url, quiet_mode, file_name),
-        "http" | "https" => http_download(url, quiet_mode, file_name, resume_download, multithread),
+        "http" | "https" => http_download(url, quiet_mode, file_name, resume_download),
         _ => utils::gen_error(format!("unsupported url scheme '{}'", url.scheme())),
     }
 }
