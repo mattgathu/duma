@@ -31,6 +31,8 @@ pub trait Events {
     fn on_failure_status(&self, status_code: StatusCode) {}
 
     fn on_finish(&mut self) {}
+
+    fn on_server_supports_resume(&mut self) {}
 }
 
 pub struct FtpDownload {
@@ -148,6 +150,9 @@ impl HttpDownload {
                 Some(hdr) => {
                     req.header(hdr.clone());
                     self.headers.remove::<Range>();
+                    for hook in &self.hooks {
+                        hook.borrow_mut().on_server_supports_resume();
+                    }
                 }
                 None => {}
             };

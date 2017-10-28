@@ -90,6 +90,7 @@ pub struct DownloadEventsHandler {
     bytes_on_disk: Option<u64>,
     fname: String,
     file: BufWriter<Box<Write>>,
+    server_supports_resume: bool,
 }
 
 impl DownloadEventsHandler {
@@ -99,11 +100,16 @@ impl DownloadEventsHandler {
             bytes_on_disk: calc_bytes_on_disk(fname),
             fname: fname.to_owned(),
             file: BufWriter::new(get_file_handle(fname, resume).unwrap()),
+            server_supports_resume: false,
         }
     }
 
     fn create_prog_bar(&mut self, length: Option<u64>) {
-        let byte_count = self.bytes_on_disk;
+        let byte_count = if self.server_supports_resume {
+            self.bytes_on_disk
+        } else {
+            None
+        };
         if let Some(len) = length {
             let exact = style(len - byte_count.unwrap_or(0)).green();
             let human_readable = style(format!("{}", HumanBytes(len - byte_count.unwrap_or(0))))
@@ -137,6 +143,10 @@ impl Events for DownloadEventsHandler {
 
     fn on_ftp_content_length(&mut self, ct_len: Option<u64>) {
         self.create_prog_bar(ct_len);
+    }
+
+    fn on_server_supports_resume(&mut self) {
+        self.server_supports_resume = true;
     }
 
     fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {
