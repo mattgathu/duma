@@ -153,6 +153,7 @@ impl HttpDownload {
             };
         }
 
+        req.headers(self.headers.clone());
 
         let mut resp = req.send()?;
 
