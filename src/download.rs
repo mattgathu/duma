@@ -1,10 +1,11 @@
-use std::io::{BufWriter, Write};
+use std::fs;
 use std::error::Error;
+use std::io::{BufWriter, Write};
 
 use console::style;
 use indicatif::{HumanBytes, ProgressBar};
 use reqwest::{StatusCode, Url};
-use reqwest::header::{ContentLength, ContentType, Headers};
+use reqwest::header::{ByteRangeSpec, ContentLength, ContentType, Headers, Range};
 
 use utils::get_file_handle;
 use bar::create_progress_bar;
@@ -19,11 +20,33 @@ fn gen_filename(url: &Url, fname: Option<&str>) -> String {
                             .split('/')
                             .last()
                             .unwrap();
-            if !name.is_empty() { format!("{}", name) } else { "index.html".to_owned() }
+            if !name.is_empty() {
+                format!("{}", name)
+            } else {
+                "index.html".to_owned()
+            }
         }
     }
 
 
+}
+
+fn calc_bytes_on_disk(fname: &str) -> Option<u64> {
+    match fs::metadata(fname) {
+        Ok(metadata) => Some(metadata.len()),
+        _ => None,
+    }
+}
+
+fn prep_headers(fname: &str, resume: bool) -> Headers {
+    let bytes_on_disk = calc_bytes_on_disk(fname);
+    let mut headers = Headers::new();
+    if resume && bytes_on_disk.is_some() {
+        let range_hdr = Range::Bytes(vec![ByteRangeSpec::AllFrom(bytes_on_disk.unwrap())]);
+        headers.set(range_hdr);
+    }
+
+    headers
 }
 
 pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<Error>> {
@@ -47,8 +70,9 @@ pub fn http_download(url: Url,
                      resume_download: bool)
                      -> Result<(), Box<Error>> {
     let fname = gen_filename(&url, filename);
+    let headers = prep_headers(&fname, resume_download);
 
-    let mut client = HttpDownload::new(url.clone(), &fname, resume_download);
+    let mut client = HttpDownload::new(url.clone(), headers);
     if !quiet_mode {
         let events_handler = DownloadEventsHandler::new(&fname, resume_download);
         client.events_hook(events_handler).download()?;
@@ -66,20 +90,26 @@ pub struct DownloadEventsHandler {
     bytes_on_disk: Option<u64>,
     fname: String,
     file: BufWriter<Box<Write>>,
+    server_supports_resume: bool,
 }
 
 impl DownloadEventsHandler {
     pub fn new(fname: &str, resume: bool) -> DownloadEventsHandler {
         DownloadEventsHandler {
             prog_bar: None,
-            bytes_on_disk: None,
+            bytes_on_disk: calc_bytes_on_disk(fname),
             fname: fname.to_owned(),
             file: BufWriter::new(get_file_handle(fname, resume).unwrap()),
+            server_supports_resume: false,
         }
     }
 
     fn create_prog_bar(&mut self, length: Option<u64>) {
-        let byte_count = self.bytes_on_disk;
+        let byte_count = if self.server_supports_resume {
+            self.bytes_on_disk
+        } else {
+            None
+        };
         if let Some(len) = length {
             let exact = style(len - byte_count.unwrap_or(0)).green();
             let human_readable = style(format!("{}", HumanBytes(len - byte_count.unwrap_or(0))))
@@ -113,6 +143,10 @@ impl Events for DownloadEventsHandler {
 
     fn on_ftp_content_length(&mut self, ct_len: Option<u64>) {
         self.create_prog_bar(ct_len);
+    }
+
+    fn on_server_supports_resume(&mut self) {
+        self.server_supports_resume = true;
     }
 
     fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {

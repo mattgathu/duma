@@ -1,4 +1,3 @@
-use std::fs;
 use std::env;
 use std::fmt;
 use std::error::Error;
@@ -6,7 +5,7 @@ use std::cell::RefCell;
 use std::io::Read;
 
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
-use reqwest::header::{AcceptRanges, ByteRangeSpec, Headers, Range, RangeUnit};
+use reqwest::header::{AcceptRanges, Headers, Range, RangeUnit};
 
 use ftp::FtpStream;
 
@@ -32,6 +31,8 @@ pub trait Events {
     fn on_failure_status(&self, status_code: StatusCode) {}
 
     fn on_finish(&mut self) {}
+
+    fn on_server_supports_resume(&mut self) {}
 }
 
 pub struct FtpDownload {
@@ -113,28 +114,24 @@ impl FtpDownload {
 
 pub struct HttpDownload {
     url: Url,
-    resume: bool,
     chunk_sz: usize,
     hooks: Vec<RefCell<Box<Events>>>,
-    fname: String,
+    headers: Headers,
 }
 
 impl fmt::Debug for HttpDownload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-               "HttpDownload url: {}",
-               self.url)
+        write!(f, "HttpDownload url: {}", self.url)
     }
 }
 
 impl HttpDownload {
-    pub fn new(url: Url, fname: &str, resume: bool) -> HttpDownload {
+    pub fn new(url: Url, headers: Headers) -> HttpDownload {
         HttpDownload {
             url: url,
-            resume: resume,
             chunk_sz: 1024,
             hooks: Vec::new(),
-            fname: fname.to_owned(),
+            headers: headers,
         }
     }
 
@@ -144,28 +141,25 @@ impl HttpDownload {
         let head_resp = client.head(self.url.clone())?
             .send()?;
 
-        if self.resume {
-            let head_resp = client.head(self.url.clone())?
-                .send()?;
-            let supports_bytes = match head_resp.headers().get::<AcceptRanges>() {
-                Some(header) => header.contains(&RangeUnit::Bytes),
-                None => false,
-            };
-            let byte_count = if supports_bytes {
-                match fs::metadata(&self.fname) {
-                    Ok(metadata) => Some(metadata.len()),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-            if byte_count.is_some() {
-                req.header(Range::Bytes(vec![ByteRangeSpec::AllFrom(byte_count.unwrap())]));
-                for hk in &self.hooks {
-                    hk.borrow_mut().on_resume_download(byte_count.unwrap());
-                }
-            }
+        let server_supports_bytes = match head_resp.headers().get::<AcceptRanges>() {
+            Some(header) => header.contains(&RangeUnit::Bytes),
+            None => false,
         };
+        if server_supports_bytes {
+            match self.headers.clone().get::<Range>() {
+                Some(hdr) => {
+                    req.header(hdr.clone());
+                    self.headers.remove::<Range>();
+                    for hook in &self.hooks {
+                        hook.borrow_mut().on_server_supports_resume();
+                    }
+                }
+                None => {}
+            };
+        }
+
+        req.headers(self.headers.clone());
+
         let mut resp = req.send()?;
 
         if resp.status().is_success() {
@@ -229,5 +223,4 @@ impl HttpDownload {
 
         Ok(builder.build()?)
     }
-    
 }
