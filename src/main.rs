@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate clap;
 extern crate duma;
 
@@ -21,7 +22,7 @@ fn main() {
 
 fn run() -> Result<(), Box<::std::error::Error>> {
     let args = App::new("Duma")
-        .version("0.1.0")
+        .version(crate_version!())
         .author("Matt Gathu <mattgathu@gmail.com>")
         .about("wget clone written in Rust")
         .arg(Arg::with_name("quiet")
@@ -42,6 +43,12 @@ fn run() -> Result<(), Box<::std::error::Error>> {
                  .help("write documents to FILE")
                  .required(false)
                  .takes_value(true))
+        .arg(Arg::with_name("AGENT")
+                 .short("U")
+                 .long("user-agent")
+                 .help("identify as AGENT instead of Duma/VERSION")
+                 .required(false)
+                 .takes_value(true))
         .arg(Arg::with_name("URL")
                  .required(true)
                  .takes_value(true)
@@ -50,12 +57,11 @@ fn run() -> Result<(), Box<::std::error::Error>> {
         .get_matches();
     let url = utils::parse_url(args.value_of("URL").unwrap())?;
     let quiet_mode = args.is_present("quiet");
-    let resume_download = args.is_present("continue");
     let file_name = args.value_of("FILE");
 
     match url.scheme() {
         "ftp" => ftp_download(url, quiet_mode, file_name),
-        "http" | "https" => http_download(url, quiet_mode, file_name, resume_download),
+        "http" | "https" => http_download(url, &args, crate_version!()),
         _ => utils::gen_error(format!("unsupported url scheme '{}'", url.scheme())),
     }
 }
