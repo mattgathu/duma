@@ -1,7 +1,7 @@
-## rget
+## duma
 
-[![Build Status](https://travis-ci.org/mattgathu/rget.svg?branch=master)](https://travis-ci.org/mattgathu/rget)
-[![Build status](https://ci.appveyor.com/api/projects/status/jyr43c87ee78bf7u?svg=true)](https://ci.appveyor.com/project/mattgathu/rget)
+[![Build Status](https://travis-ci.org/mattgathu/duma.svg?branch=master)](https://travis-ci.org/mattgathu/duma)
+[![Build status](https://ci.appveyor.com/api/projects/status/jyr43c87ee78bf7u?svg=true)](https://ci.appveyor.com/project/mattgathu/duma)
 
 A wget clone written in Rust.
 
@@ -15,12 +15,12 @@ A wget clone written in Rust.
 ## usage
 
 ```
-Rget 0.1.0
+Duma 0.1.0
 Matt Gathu <mattgathu@gmail.com>
 wget clone written in Rust
 
 USAGE:
-    rget [FLAGS] [OPTIONS] <URL>
+    duma [FLAGS] [OPTIONS] <URL>
 
 FLAGS:
     -c, --continue    resume getting a partially-downloaded file
