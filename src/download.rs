@@ -2,10 +2,11 @@ use std::fs;
 use std::error::Error;
 use std::io::{BufWriter, Write};
 
+use clap::ArgMatches;
 use console::style;
 use indicatif::{HumanBytes, ProgressBar};
 use reqwest::{StatusCode, Url};
-use reqwest::header::{ByteRangeSpec, ContentLength, ContentType, Headers, Range};
+use reqwest::header::{ByteRangeSpec, ContentLength, ContentType, Headers, Range, UserAgent};
 
 use utils::get_file_handle;
 use bar::create_progress_bar;
@@ -38,13 +39,15 @@ fn calc_bytes_on_disk(fname: &str) -> Option<u64> {
     }
 }
 
-fn prep_headers(fname: &str, resume: bool) -> Headers {
+fn prep_headers(fname: &str, resume: bool, user_agent: String) -> Headers {
     let bytes_on_disk = calc_bytes_on_disk(fname);
     let mut headers = Headers::new();
     if resume && bytes_on_disk.is_some() {
         let range_hdr = Range::Bytes(vec![ByteRangeSpec::AllFrom(bytes_on_disk.unwrap())]);
         headers.set(range_hdr);
     }
+
+    headers.set(UserAgent::new(user_agent));
 
     headers
 }
@@ -64,16 +67,15 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Resul
 
 }
 
-pub fn http_download(url: Url,
-                     quiet_mode: bool,
-                     filename: Option<&str>,
-                     resume_download: bool)
-                     -> Result<(), Box<Error>> {
-    let fname = gen_filename(&url, filename);
-    let headers = prep_headers(&fname, resume_download);
+pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Result<(), Box<Error>> {
+    let resume_download = args.is_present("continue");
+    let user_agent = args.value_of("AGENT").unwrap_or(&format!("Duma/{}", version)).to_owned();
+
+    let fname = gen_filename(&url, args.value_of("FILE"));
+    let headers = prep_headers(&fname, resume_download, user_agent);
 
     let mut client = HttpDownload::new(url.clone(), headers);
-    if !quiet_mode {
+    if !args.is_present("quiet") {
         let events_handler = DownloadEventsHandler::new(&fname, resume_download);
         client.events_hook(events_handler).download()?;
     } else {
@@ -82,7 +84,6 @@ pub fn http_download(url: Url,
     }
     Ok(())
 }
-
 
 
 pub struct DownloadEventsHandler {
