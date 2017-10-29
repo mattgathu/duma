@@ -1,7 +1,9 @@
 language: rust
+cache: cargo
 rust:
-- nightly
 - stable
 script:
 - cargo build --verbose --all
 - cargo test --verbose --all
+notifications:
+  email: false
