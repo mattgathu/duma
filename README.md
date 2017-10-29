@@ -1,7 +1,7 @@
 ## duma
 
 [![Build Status](https://travis-ci.org/mattgathu/duma.svg?branch=master)](https://travis-ci.org/mattgathu/duma)
-[![Build status](https://ci.appveyor.com/api/projects/status/jyr43c87ee78bf7u?svg=true)](https://ci.appveyor.com/project/mattgathu/duma)
+[![Build status](https://ci.appveyor.com/api/projects/status/007cmm9c6c9onai9?svg=true)](https://ci.appveyor.com/project/mattgathu/duma)
 
 A wget clone written in Rust.
 
