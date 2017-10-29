@@ -1,5 +1,5 @@
 [root]
-name = "rget"
+name = "duma"
 version = "0.1.0"
 dependencies = [
  "assert_cli 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",

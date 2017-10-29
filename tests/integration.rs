@@ -5,7 +5,7 @@ mod integration {
     use assert_cli;
 
     #[test]
-    fn calling_rget_without_args() {
+    fn calling_duma_without_args() {
         assert_cli::Assert::main_binary()
             .fails()
             .and()
@@ -15,7 +15,7 @@ mod integration {
     }
 
     #[test]
-    fn calling_rget_with_invalid_url() {
+    fn calling_duma_with_invalid_url() {
         assert_cli::Assert::main_binary()
             .with_args(&["wwww.shouldnotwork.com"])
             .fails()

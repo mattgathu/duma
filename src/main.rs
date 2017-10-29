@@ -1,10 +1,10 @@
 extern crate clap;
-extern crate rget;
+extern crate duma;
 
 use std::process;
 
-use rget::download::{ftp_download, http_download};
-use rget::utils;
+use duma::download::{ftp_download, http_download};
+use duma::utils;
 
 use clap::{App, Arg};
 
@@ -20,7 +20,7 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<::std::error::Error>> {
-    let args = App::new("Rget")
+    let args = App::new("Duma")
         .version("0.1.0")
         .author("Matt Gathu <mattgathu@gmail.com>")
         .about("wget clone written in Rust")
