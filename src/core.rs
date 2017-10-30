@@ -1,9 +1,9 @@
-use std::env;
 use std::fmt;
 use std::io::Read;
 use std::error::Error;
 use std::cell::RefCell;
 use std::time::Duration;
+use std::collections::HashMap;
 
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
 use reqwest::header::{AcceptRanges, Headers, Range, RangeUnit};
@@ -117,6 +117,7 @@ pub struct HttpDownload {
     hooks: Vec<RefCell<Box<Events>>>,
     headers: Headers,
     timeout: Option<Duration>,
+    proxies: Option<HashMap<String, String>>,
 }
 
 impl fmt::Debug for HttpDownload {
@@ -126,13 +127,18 @@ impl fmt::Debug for HttpDownload {
 }
 
 impl HttpDownload {
-    pub fn new(url: Url, headers: Headers, timeout: Option<Duration>) -> HttpDownload {
+    pub fn new(url: Url,
+               headers: Headers,
+               timeout: Option<Duration>,
+               proxies: Option<HashMap<String, String>>)
+               -> HttpDownload {
         HttpDownload {
             url: url,
             chunk_sz: 1024,
             hooks: Vec::new(),
             headers: headers,
             timeout: timeout,
+            proxies: proxies,
         }
     }
 
@@ -148,11 +154,11 @@ impl HttpDownload {
         };
         if server_supports_bytes {
             if let Some(hdr) = self.headers.clone().get::<Range>() {
-                    req.header(hdr.clone());
-                    self.headers.remove::<Range>();
-                    for hook in &self.hooks {
-                        hook.borrow_mut().on_server_supports_resume();
-                    }
+                req.header(hdr.clone());
+                self.headers.remove::<Range>();
+                for hook in &self.hooks {
+                    hook.borrow_mut().on_server_supports_resume();
+                }
             };
         }
 
@@ -207,18 +213,17 @@ impl HttpDownload {
     }
 
     fn get_reqwest_client(&self) -> Result<(Client), Box<Error>> {
-        let http_proxy = env::var("http_proxy");
-        let https_proxy = env::var("https_proxy");
-
         let mut builder = Client::builder()?;
 
-        if http_proxy.is_ok() {
-            builder.proxy(Proxy::http(Url::parse(&http_proxy.unwrap())?)?);
-        }
+        if let Some(proxies) = self.proxies.clone() {
+            if let Some(http_proxy) = proxies.get("http_proxy") {
+                builder.proxy(Proxy::http(Url::parse(http_proxy)?)?);
+            }
 
-        if https_proxy.is_ok() {
-            builder.proxy(Proxy::https(Url::parse(&https_proxy.unwrap())?)?);
-        }
+            if let Some(https_proxy) = proxies.get("https_proxy") {
+                builder.proxy(Proxy::https(Url::parse(https_proxy)?)?);
+            }
+        };
 
         if let Some(secs) = self.timeout {
             builder.timeout(secs);

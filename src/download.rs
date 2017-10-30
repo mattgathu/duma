@@ -1,6 +1,8 @@
 use std::fs;
+use std::env;
 use std::error::Error;
 use std::time::Duration;
+use std::collections::HashMap;
 use std::io::{BufWriter, Write};
 
 use clap::ArgMatches;
@@ -53,6 +55,23 @@ fn prep_headers(fname: &str, resume: bool, user_agent: String) -> Headers {
     headers
 }
 
+fn get_http_proxies() -> Option<HashMap<String, String>> {
+    let mut proxies = HashMap::new();
+    if let Ok(proxy) = env::var("http_proxy") {
+        proxies.insert("http_proxy".to_owned(), proxy);
+    };
+    if let Ok(proxy) = env::var("https_proxy") {
+        proxies.insert("https_proxy".to_owned(), proxy);
+    };
+
+    if !proxies.is_empty() {
+        Some(proxies)
+    } else {
+        None
+    }
+
+}
+
 pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<Error>> {
     let fname = gen_filename(&url, filename);
 
@@ -76,9 +95,12 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Result<(), B
     let headers = prep_headers(&fname, resume_download, user_agent);
     let timeout = if let Some(secs) = args.value_of("SECONDS") {
         Some(Duration::new(secs.parse::<u64>()?, 0))
-    } else { None };
+    } else {
+        None
+    };
+    let proxies = get_http_proxies();
 
-    let mut client = HttpDownload::new(url.clone(), headers, timeout);
+    let mut client = HttpDownload::new(url.clone(), headers, timeout, proxies);
     if !args.is_present("quiet") {
         let events_handler = DownloadEventsHandler::new(&fname, resume_download);
         client.events_hook(events_handler).download()?;
