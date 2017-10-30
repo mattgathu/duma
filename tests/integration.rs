@@ -23,4 +23,14 @@ mod integration {
             .prints_error("error:")
             .unwrap();
     }
+
+    #[test]
+    fn test_request_timeout() {
+        assert_cli::Assert::main_binary()
+            .with_args(&["-T", "3", "https://httpbin.org/delay/60"])
+            .fails()
+            .and()
+            .prints_error("timed out")
+            .unwrap();
+    }
 }

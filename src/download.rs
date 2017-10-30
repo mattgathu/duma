@@ -1,5 +1,6 @@
 use std::fs;
 use std::error::Error;
+use std::time::Duration;
 use std::io::{BufWriter, Write};
 
 use clap::ArgMatches;
@@ -73,8 +74,11 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Result<(), B
 
     let fname = gen_filename(&url, args.value_of("FILE"));
     let headers = prep_headers(&fname, resume_download, user_agent);
+    let timeout = if let Some(secs) = args.value_of("SECONDS") {
+        Some(Duration::new(secs.parse::<u64>()?, 0))
+    } else { None };
 
-    let mut client = HttpDownload::new(url.clone(), headers);
+    let mut client = HttpDownload::new(url.clone(), headers, timeout);
     if !args.is_present("quiet") {
         let events_handler = DownloadEventsHandler::new(&fname, resume_download);
         client.events_hook(events_handler).download()?;

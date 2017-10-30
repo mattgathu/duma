@@ -1,8 +1,9 @@
 use std::env;
 use std::fmt;
+use std::io::Read;
 use std::error::Error;
 use std::cell::RefCell;
-use std::io::Read;
+use std::time::Duration;
 
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
 use reqwest::header::{AcceptRanges, Headers, Range, RangeUnit};
@@ -115,6 +116,7 @@ pub struct HttpDownload {
     chunk_sz: usize,
     hooks: Vec<RefCell<Box<Events>>>,
     headers: Headers,
+    timeout: Option<Duration>,
 }
 
 impl fmt::Debug for HttpDownload {
@@ -124,17 +126,18 @@ impl fmt::Debug for HttpDownload {
 }
 
 impl HttpDownload {
-    pub fn new(url: Url, headers: Headers) -> HttpDownload {
+    pub fn new(url: Url, headers: Headers, timeout: Option<Duration>) -> HttpDownload {
         HttpDownload {
             url: url,
             chunk_sz: 1024,
             hooks: Vec::new(),
             headers: headers,
+            timeout: timeout,
         }
     }
 
     pub fn download(&mut self) -> Result<(), Box<Error>> {
-        let client = Self::get_reqwest_client()?;
+        let client = self.get_reqwest_client()?;
         let mut req = client.get(self.url.clone())?;
         let head_resp = client.head(self.url.clone())?
             .send()?;
@@ -202,7 +205,8 @@ impl HttpDownload {
 
         Ok(())
     }
-    fn get_reqwest_client() -> Result<(Client), Box<Error>> {
+
+    fn get_reqwest_client(&self) -> Result<(Client), Box<Error>> {
         let http_proxy = env::var("http_proxy");
         let https_proxy = env::var("https_proxy");
 
@@ -214,6 +218,10 @@ impl HttpDownload {
 
         if https_proxy.is_ok() {
             builder.proxy(Proxy::https(Url::parse(&https_proxy.unwrap())?)?);
+        }
+
+        if let Some(secs) = self.timeout {
+            builder.timeout(secs);
         }
 
         Ok(builder.build()?)
