@@ -10,8 +10,6 @@ use reqwest::header::{AcceptRanges, Headers, Range, RangeUnit};
 use ftp::FtpStream;
 
 
-
-
 #[allow(unused_variables)]
 pub trait Events {
     fn on_resume_download(&mut self, bytes_on_disk: u64) {}
@@ -146,15 +144,12 @@ impl HttpDownload {
             None => false,
         };
         if server_supports_bytes {
-            match self.headers.clone().get::<Range>() {
-                Some(hdr) => {
+            if let Some(hdr) = self.headers.clone().get::<Range>() {
                     req.header(hdr.clone());
                     self.headers.remove::<Range>();
                     for hook in &self.hooks {
                         hook.borrow_mut().on_server_supports_resume();
                     }
-                }
-                None => {}
             };
         }
 
