@@ -23,7 +23,7 @@ pub fn gen_error(msg: String) -> Result<(), Box<::std::error::Error>> {
 
 pub fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<Box<Write>> {
     if fname == "-" {
-        return Ok(Box::new(io::stdout()))
+        return Ok(Box::new(io::stdout()));
     }
     if resume_download && Path::new(fname).exists() {
         match OpenOptions::new().append(true).open(fname) {
@@ -33,7 +33,7 @@ pub fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<Box<Wri
     } else {
         match OpenOptions::new().write(true).create(true).open(fname) {
             Ok(file) => Ok(Box::new(file)),
-            Err(error) => Err(error)
+            Err(error) => Err(error),
         }
     }
 }
