@@ -1,6 +1,5 @@
 use std::io;
 use std::path::Path;
-use std::fmt::Display;
 use std::fs::OpenOptions;
 use std::io::{Error, ErrorKind, Write};
 use reqwest::{Url, UrlError};
@@ -38,13 +37,3 @@ pub fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<Box<Wri
     }
 }
 
-pub fn print<T: Display>(var: &T, quiet_mode: bool, is_error: bool) {
-    // print if not in quiet mode
-    if !quiet_mode {
-        if is_error {
-            eprintln!("{}", var);
-        } else {
-            println!("{}", var);
-        }
-    }
-}
