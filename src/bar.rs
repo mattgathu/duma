@@ -2,14 +2,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 static PBAR_FMT: &'static str = "{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}";
 
-pub fn create_progress_bar(quiet_mode: bool, msg: &str, length: Option<u64>) -> ProgressBar {
-    let progbar = if quiet_mode {
-        ProgressBar::hidden()
-    } else {
-        match length {
+pub fn create_progress_bar(msg: &str, length: Option<u64>) -> ProgressBar {
+    let progbar = match length {
             Some(len) => ProgressBar::new(len),
             None => ProgressBar::new_spinner(),
-        }
     };
 
     progbar.set_message(msg);
