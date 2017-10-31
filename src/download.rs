@@ -147,7 +147,7 @@ impl DownloadEventsHandler {
             println!("Length: {}", style("unknown").red());
         }
 
-        let prog_bar = create_progress_bar(false, &self.fname, length);
+        let prog_bar = create_progress_bar(&self.fname, length);
         if byte_count.is_some() {
             prog_bar.inc(byte_count.unwrap());
         }
