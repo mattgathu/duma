@@ -7,7 +7,7 @@ authors = ["Matt Gathu <mattgathu@gmail.com>"]
 reqwest = "0.7.3"
 indicatif = "0.7.0"
 console = "0.5.0"
-clap = "2.26.0"
+clap = "2.31.2"
 ftp = "2.2.1"
 num_cpus = "1.0"
 
