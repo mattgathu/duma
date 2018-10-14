@@ -17,7 +17,7 @@ mod integration {
     #[test]
     fn calling_duma_with_invalid_url() {
         assert_cli::Assert::main_binary()
-            .with_args(&["wwww.shouldnotwork.com"])
+            .with_args(&["wwww.shouldnotworkanddoesnot.com"])
             .fails()
             .and()
             .prints_error("error:")
