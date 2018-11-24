@@ -28,7 +28,7 @@ fn run() -> Result<(), Box<::std::error::Error>> {
         (@arg AGENT: -U --useragent +takes_value "identify as AGENT instead of Duma/VERSION")
         (@arg SECONDS: -T --timeout +takes_value "set all timeout values to SECONDS")
         (@arg URL: +required +takes_value "url to download")
-        ).get_matches();
+        ).get_matches_safe()?;
 
     let url = utils::parse_url(args.value_of("URL").unwrap())?;
     let quiet_mode = args.is_present("quiet");
