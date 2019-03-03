@@ -11,9 +11,9 @@ use indicatif::{HumanBytes, ProgressBar};
 use reqwest::{StatusCode, Url};
 use reqwest::header::{ByteRangeSpec, ContentLength, ContentType, Headers, Range, UserAgent};
 
-use utils::get_file_handle;
-use bar::create_progress_bar;
-use core::{Events, FtpDownload, HttpDownload};
+use crate::utils::get_file_handle;
+use crate::bar::create_progress_bar;
+use crate::core::{Events, FtpDownload, HttpDownload};
 
 
 fn gen_filename(url: &Url, fname: Option<&str>) -> String {
