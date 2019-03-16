@@ -1,11 +1,12 @@
-extern crate ftp;
 extern crate clap;
 extern crate console;
-extern crate reqwest;
+extern crate failure;
+extern crate ftp;
 extern crate indicatif;
-extern crate num_cpus;
+extern crate reqwest;
+extern crate threadpool;
 
-pub mod download;
-pub mod utils;
 pub mod bar;
 pub mod core;
+pub mod download;
+pub mod utils;
