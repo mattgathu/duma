@@ -1,23 +1,30 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::error::Error;
 use std::fmt;
 use std::io::Read;
-use std::error::Error;
-use std::cell::RefCell;
+use std::sync::mpsc;
 use std::time::Duration;
-use std::collections::HashMap;
 
+use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, Headers, Range, RangeUnit};
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
-use reqwest::header::{AcceptRanges, Headers, Range, RangeUnit};
+use threadpool::ThreadPool;
 
 use ftp::FtpStream;
 
+pub type DumaResult<T> = Result<T, Box<Error>>;
 
 #[allow(unused_variables)]
-pub trait Events {
+pub trait EventsHandler {
     fn on_resume_download(&mut self, bytes_on_disk: u64) {}
 
     fn on_headers(&mut self, headers: Headers) {}
 
-    fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {
+    fn on_content(&mut self, content: &[u8]) -> DumaResult<()> {
+        Ok(())
+    }
+
+    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> DumaResult<()> {
         Ok(())
     }
 
@@ -31,26 +38,30 @@ pub trait Events {
 
     fn on_finish(&mut self) {}
 
+    fn on_max_retries(&mut self) {}
+
     fn on_server_supports_resume(&mut self) {}
 }
 
 pub struct FtpDownload {
     url: Url,
-    hooks: Vec<RefCell<Box<Events>>>,
+    hooks: Vec<RefCell<Box<dyn EventsHandler>>>,
 }
 
 impl FtpDownload {
     pub fn new(url: Url) -> Self {
         Self {
-            url: url,
+            url,
             hooks: Vec::new(),
         }
     }
 
-    pub fn download(&mut self) -> Result<(), Box<Error>> {
-        let ftp_server = format!("{}:{}",
-                                 self.url.host_str().unwrap(),
-                                 self.url.port_or_known_default().unwrap());
+    pub fn download(&mut self) -> DumaResult<()> {
+        let ftp_server = format!(
+            "{}:{}",
+            self.url.host_str().unwrap(),
+            self.url.port_or_known_default().unwrap()
+        );
         let username = if self.url.username().is_empty() {
             "anonymous"
         } else {
@@ -58,10 +69,7 @@ impl FtpDownload {
         };
         let password = self.url.password().unwrap_or("anonymous");
 
-        let mut path_segments: Vec<&str> = self.url
-            .path_segments()
-            .unwrap()
-            .collect();
+        let mut path_segments: Vec<&str> = self.url.path_segments().unwrap().collect();
         let ftp_fname = path_segments.pop().unwrap();
 
         let mut conn = FtpStream::connect(ftp_server)?;
@@ -99,13 +107,13 @@ impl FtpDownload {
         Ok(())
     }
 
-    fn send_content(&self, contents: &[u8]) -> Result<(), Box<Error>> {
+    fn send_content(&self, contents: &[u8]) -> DumaResult<()> {
         for hk in &self.hooks {
             hk.borrow_mut().on_content(contents)?;
         }
         Ok(())
     }
-    pub fn events_hook<E: Events + 'static>(&mut self, hk: E) -> &mut FtpDownload {
+    pub fn events_hook<E: EventsHandler + 'static>(&mut self, hk: E) -> &mut FtpDownload {
         self.hooks.push(RefCell::new(Box::new(hk)));
         self
     }
@@ -114,10 +122,15 @@ impl FtpDownload {
 pub struct HttpDownload {
     url: Url,
     chunk_sz: usize,
-    hooks: Vec<RefCell<Box<Events>>>,
+    hooks: Vec<RefCell<Box<dyn EventsHandler>>>,
     headers: Headers,
     timeout: Option<Duration>,
     proxies: Option<HashMap<String, String>>,
+    concurrent: bool,
+    chunk_sizes: Option<Vec<(u64, u64)>>,
+    bytes_on_disk: Option<u64>,
+    max_retries: i32,
+    retries: i32,
 }
 
 impl fmt::Debug for HttpDownload {
@@ -127,26 +140,34 @@ impl fmt::Debug for HttpDownload {
 }
 
 impl HttpDownload {
-    pub fn new(url: Url,
-               headers: Headers,
-               timeout: Option<Duration>,
-               proxies: Option<HashMap<String, String>>)
-               -> HttpDownload {
+    pub fn new(
+        url: Url,
+        headers: Headers,
+        timeout: Option<Duration>,
+        proxies: Option<HashMap<String, String>>,
+        concurrent: bool,
+        chunk_sizes: Option<Vec<(u64, u64)>>,
+        bytes_on_disk: Option<u64>,
+    ) -> HttpDownload {
         HttpDownload {
-            url: url,
-            chunk_sz: 1024,
+            url,
+            chunk_sz: 5120,
             hooks: Vec::new(),
-            headers: headers,
-            timeout: timeout,
-            proxies: proxies,
+            headers,
+            timeout,
+            proxies,
+            concurrent,
+            chunk_sizes,
+            bytes_on_disk,
+            max_retries: 100,
+            retries: 0,
         }
     }
 
-    pub fn download(&mut self) -> Result<(), Box<Error>> {
+    pub fn download(&mut self) -> DumaResult<()> {
         let client = self.get_reqwest_client()?;
         let mut req = client.get(self.url.clone())?;
-        let head_resp = client.head(self.url.clone())?
-            .send()?;
+        let head_resp = client.head(self.url.clone())?.send()?;
 
         let server_supports_bytes = match head_resp.headers().get::<AcceptRanges>() {
             Some(header) => header.contains(&RangeUnit::Bytes),
@@ -154,7 +175,9 @@ impl HttpDownload {
         };
         if server_supports_bytes {
             if let Some(hdr) = self.headers.clone().get::<Range>() {
-                req.header(hdr.clone());
+                if !self.concurrent {
+                    req.header(hdr.clone());
+                }
                 self.headers.remove::<Range>();
                 for hook in &self.hooks {
                     hook.borrow_mut().on_server_supports_resume();
@@ -171,7 +194,11 @@ impl HttpDownload {
             for hk in &self.hooks {
                 hk.borrow_mut().on_headers(headers.clone());
             }
-            self.singlethread_download(&mut resp)?;
+            if server_supports_bytes && self.concurrent {
+                self.concurrent_download(client, &headers)?;
+            } else {
+                self.singlethread_download(&mut resp)?;
+            }
         } else {
             for hk in &self.hooks {
                 hk.borrow_mut().on_failure_status(resp.status());
@@ -185,15 +212,15 @@ impl HttpDownload {
         Ok(())
     }
 
-    pub fn events_hook<E: Events + 'static>(&mut self, hk: E) -> &mut HttpDownload {
+    pub fn events_hook<E: EventsHandler + 'static>(&mut self, hk: E) -> &mut HttpDownload {
         self.hooks.push(RefCell::new(Box::new(hk)));
         self
     }
 
-    fn singlethread_download(&mut self, resp: &mut Response) -> Result<(), Box<Error>> {
+    fn singlethread_download(&mut self, resp: &mut Response) -> DumaResult<()> {
         loop {
             let mut buffer = vec![0; self.chunk_sz];
-            let bcount = resp.read(&mut buffer[..]).unwrap();
+            let bcount = resp.read(&mut buffer[..])?;
             buffer.truncate(bcount);
             if !buffer.is_empty() {
                 self.send_content(buffer.as_slice())?;
@@ -204,7 +231,83 @@ impl HttpDownload {
         Ok(())
     }
 
-    fn send_content(&mut self, contents: &[u8]) -> Result<(), Box<Error>> {
+    pub fn concurrent_download(&mut self, client: Client, headers: &Headers) -> DumaResult<()> {
+        let (data_tx, data_rx) = mpsc::channel();
+        let (errors_tx, errors_rx) = mpsc::channel();
+        let ct_len = headers
+            .get::<ContentLength>()
+            .map(|ct_len| **ct_len)
+            .unwrap();
+        let n_workers = 8;
+        let chunk_sizes = self
+            .chunk_sizes
+            .clone()
+            .unwrap_or_else(|| self.get_chunk_sizes(ct_len));
+        let worker_pool = ThreadPool::new(n_workers);
+        for offsets in chunk_sizes {
+            let data_tx = data_tx.clone();
+            let errors_tx = errors_tx.clone();
+            let url = self.url.clone();
+            let client = client.clone();
+            worker_pool
+                .execute(move || download_chunk(client, url, offsets, data_tx.clone(), errors_tx))
+        }
+
+        let threshold = ct_len - self.bytes_on_disk.unwrap_or(0);
+        let mut count = 0;
+        loop {
+            if count == threshold {
+                break;
+            }
+            let (byte_count, offset, buf) = data_rx.recv()?;
+            count += byte_count;
+            for hk in &self.hooks {
+                hk.borrow_mut()
+                    .on_concurrent_content((byte_count, offset, &buf))?;
+            }
+            match errors_rx.recv_timeout(Duration::from_micros(1)) {
+                Err(_) => {}
+                Ok(offsets) => {
+                    if self.retries > self.max_retries {
+                        for hk in &self.hooks {
+                            hk.borrow_mut().on_max_retries();
+                        }
+                    }
+                    self.retries += 1;
+                    let data_tx = data_tx.clone();
+                    let errors_tx = errors_tx.clone();
+                    let url = self.url.clone();
+                    let client = client.clone();
+                    worker_pool
+                        .execute(move || download_chunk(client, url, offsets, data_tx, errors_tx))
+                }
+            }
+        }
+        worker_pool.join();
+        Ok(())
+    }
+
+    fn get_chunk_sizes(&self, ct_len: u64) -> Vec<(u64, u64)> {
+        let chunk_size = 512_000;
+        let no_of_chunks = ct_len / chunk_size;
+        let mut sizes = Vec::new();
+
+        for chunk in 0..no_of_chunks {
+            let bound = if chunk == no_of_chunks - 1 {
+                ct_len
+            } else {
+                ((chunk + 1) * chunk_size) - 1
+            };
+            sizes.push((chunk * chunk_size, bound));
+        }
+        if sizes.is_empty() {
+            sizes.push((0, ct_len));
+        }
+
+        sizes
+    }
+
+    fn send_content(&mut self, contents: &[u8]) -> DumaResult<()> {
         for hk in &self.hooks {
             hk.borrow_mut().on_content(contents)?;
         }
@@ -212,7 +315,7 @@ impl HttpDownload {
         Ok(())
     }
 
-    fn get_reqwest_client(&self) -> Result<(Client), Box<Error>> {
+    fn get_reqwest_client(&self) -> DumaResult<(Client)> {
         let mut builder = Client::builder()?;
 
         if let Some(proxies) = self.proxies.clone() {
@@ -230,5 +333,46 @@ impl HttpDownload {
         }
 
         Ok(builder.build()?)
+    }
+}
+
+fn download_chunk(
+    client: Client,
+    url: Url,
+    offsets: (u64, u64),
+    sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
+    errors: mpsc::Sender<(u64, u64)>,
+) {
+    fn _download_chunk(
+        client: Client,
+        url: Url,
+        offsets: (u64, u64),
+        sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
+        start_offset: &mut u64,
+    ) -> DumaResult<()> {
+        let byte_range = Range::Bytes(vec![ByteRangeSpec::FromTo(offsets.0, offsets.1)]);
+        let mut resp = client.get(url)?.header(byte_range).send()?;
+        let chunk_sz = offsets.1 - offsets.0;
+        loop {
+            let mut buf = vec![0; chunk_sz as usize];
+            let byte_count = resp.read(&mut buf[..]).unwrap();
+            buf.truncate(byte_count);
+            if !buf.is_empty() {
+                sender.send((byte_count as u64, *start_offset, buf.clone()))?;
+                *start_offset += byte_count as u64;
+            } else {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+    let mut start_offset = offsets.0;
+    let end_offset = offsets.1;
+    match _download_chunk(client, url, offsets, sender, &mut start_offset) {
+        Ok(_) => {}
+        Err(_) => {
+            errors.send((start_offset, end_offset)).unwrap();
+        }
     }
 }

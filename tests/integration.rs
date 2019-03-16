@@ -11,7 +11,6 @@ mod integration {
             .and()
             .prints_error("error: The following required arguments were not provided:")
             .unwrap();
-
     }
 
     #[test]
