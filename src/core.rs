@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fmt;
 use std::io::Read;
 use std::sync::mpsc;
@@ -9,10 +8,10 @@ use std::time::Duration;
 use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, Headers, Range, RangeUnit};
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
 use threadpool::ThreadPool;
+use failure::Fallible;
 
 use ftp::FtpStream;
 
-pub type DumaResult<T> = Result<T, Box<Error>>;
 
 #[allow(unused_variables)]
 pub trait EventsHandler {
@@ -20,11 +19,11 @@ pub trait EventsHandler {
 
     fn on_headers(&mut self, headers: Headers) {}
 
-    fn on_content(&mut self, content: &[u8]) -> DumaResult<()> {
+    fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
         Ok(())
     }
 
-    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> DumaResult<()> {
+    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> Fallible<()> {
         Ok(())
     }
 
@@ -56,7 +55,7 @@ impl FtpDownload {
         }
     }
 
-    pub fn download(&mut self) -> DumaResult<()> {
+    pub fn download(&mut self) -> Fallible<()> {
         let ftp_server = format!(
             "{}:{}",
             self.url.host_str().unwrap(),
@@ -107,7 +106,7 @@ impl FtpDownload {
         Ok(())
     }
 
-    fn send_content(&self, contents: &[u8]) -> DumaResult<()> {
+    fn send_content(&self, contents: &[u8]) -> Fallible<()> {
         for hk in &self.hooks {
             hk.borrow_mut().on_content(contents)?;
         }
@@ -164,7 +163,7 @@ impl HttpDownload {
         }
     }
 
-    pub fn download(&mut self) -> DumaResult<()> {
+    pub fn download(&mut self) -> Fallible<()> {
         let client = self.get_reqwest_client()?;
         let mut req = client.get(self.url.clone())?;
         let head_resp = client.head(self.url.clone())?.send()?;
@@ -217,7 +216,7 @@ impl HttpDownload {
         self
     }
 
-    fn singlethread_download(&mut self, resp: &mut Response) -> DumaResult<()> {
+    fn singlethread_download(&mut self, resp: &mut Response) -> Fallible<()> {
         loop {
             let mut buffer = vec![0; self.chunk_sz];
             let bcount = resp.read(&mut buffer[..])?;
@@ -231,7 +230,7 @@ impl HttpDownload {
         Ok(())
     }
 
-    pub fn concurrent_download(&mut self, client: Client, headers: &Headers) -> DumaResult<()> {
+    pub fn concurrent_download(&mut self, client: Client, headers: &Headers) -> Fallible<()> {
         let (data_tx, data_rx) = mpsc::channel();
         let (errors_tx, errors_rx) = mpsc::channel();
         let ct_len = headers
@@ -307,7 +306,7 @@ impl HttpDownload {
         sizes
     }
 
-    fn send_content(&mut self, contents: &[u8]) -> DumaResult<()> {
+    fn send_content(&mut self, contents: &[u8]) -> Fallible<()> {
         for hk in &self.hooks {
             hk.borrow_mut().on_content(contents)?;
         }
@@ -315,7 +314,7 @@ impl HttpDownload {
         Ok(())
     }
 
-    fn get_reqwest_client(&self) -> DumaResult<(Client)> {
+    fn get_reqwest_client(&self) -> Fallible<(Client)> {
         let mut builder = Client::builder()?;
 
         if let Some(proxies) = self.proxies.clone() {
@@ -349,7 +348,7 @@ fn download_chunk(
         offsets: (u64, u64),
         sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
         start_offset: &mut u64,
-    ) -> DumaResult<()> {
+    ) -> Fallible<()> {
         let byte_range = Range::Bytes(vec![ByteRangeSpec::FromTo(offsets.0, offsets.1)]);
         let mut resp = client.get(url)?.header(byte_range).send()?;
         let chunk_sz = offsets.1 - offsets.0;

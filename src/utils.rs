@@ -1,8 +1,8 @@
+use failure::{bail, Fallible};
 use reqwest::{Url, UrlError};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
-use std::io::{Error, ErrorKind};
 use std::path::Path;
 
 pub fn parse_url(url: &str) -> Result<Url, UrlError> {
@@ -16,8 +16,8 @@ pub fn parse_url(url: &str) -> Result<Url, UrlError> {
     }
 }
 
-pub fn gen_error(msg: String) -> Result<(), Box<::std::error::Error>> {
-    Err(Box::new(Error::new(ErrorKind::Other, msg)))
+pub fn gen_error(msg: String) -> Fallible<()> {
+    bail!(msg)
 }
 
 pub fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File> {

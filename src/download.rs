@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::env;
-use std::error::Error;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -14,7 +13,7 @@ use reqwest::header::{ByteRangeSpec, ContentLength, ContentType, Headers, Range,
 use reqwest::{Client, StatusCode, Url};
 
 use crate::bar::create_progress_bar;
-use crate::core::{DumaResult, EventsHandler, FtpDownload, HttpDownload};
+use crate::core::{EventsHandler, FtpDownload, HttpDownload};
 use crate::utils::get_file_handle;
 
 fn request_headers_from_server(url: &Url) -> Fallible<Headers> {
@@ -129,7 +128,7 @@ fn get_http_proxies() -> Option<HashMap<String, String>> {
     }
 }
 
-pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Result<(), Box<Error>> {
+pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Fallible<()> {
     let fname = gen_filename(&url, filename);
 
     let mut client = FtpDownload::new(url.clone());
@@ -143,7 +142,7 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Resul
     Ok(())
 }
 
-pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Result<(), Box<Error>> {
+pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()> {
     let resume_download = args.is_present("continue");
     let concurrent_download = !args.is_present("singlethread");
     let user_agent = args
@@ -275,7 +274,7 @@ impl EventsHandler for DefaultEventsHandler {
         self.server_supports_resume = true;
     }
 
-    fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {
+    fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
         let byte_count = content.len() as u64;
         self.file.write_all(content)?;
         self.prog_bar.as_mut().unwrap().inc(byte_count);
@@ -283,7 +282,7 @@ impl EventsHandler for DefaultEventsHandler {
         Ok(())
     }
 
-    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> DumaResult<()> {
+    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> Fallible<()> {
         let (byte_count, offset, buf) = content;
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(buf)?;
@@ -337,7 +336,7 @@ impl QuietEventsHandler {
 }
 
 impl EventsHandler for QuietEventsHandler {
-    fn on_content(&mut self, content: &[u8]) -> Result<(), Box<Error>> {
+    fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
         self.file.write_all(content)?;
 
         Ok(())

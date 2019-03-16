@@ -3,6 +3,7 @@ use std::process;
 use clap::{clap_app, crate_version};
 use duma::download::{ftp_download, http_download};
 use duma::utils;
+use failure::Fallible;
 
 fn main() {
     match run() {
@@ -14,7 +15,7 @@ fn main() {
     }
 }
 
-fn run() -> Result<(), Box<::std::error::Error>> {
+fn run() -> Fallible<()> {
     let args = clap_app!(Duma =>
     (version: crate_version!())
     (author: "Matt Gathu <mattgathu@gmail.com>")
