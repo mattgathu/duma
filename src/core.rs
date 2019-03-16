@@ -5,13 +5,27 @@ use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use failure::Fallible;
 use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, Headers, Range, RangeUnit};
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
 use threadpool::ThreadPool;
-use failure::Fallible;
 
 use ftp::FtpStream;
 
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub user_agent: String,
+    pub resume: bool,
+    pub headers: Headers,
+    pub file: String,
+    pub timeout: Option<Duration>,
+    pub concurrent: bool,
+    pub proxies: Option<HashMap<String, String>>,
+    pub max_retries: i32,
+    pub bytes_on_disk: Option<u64>,
+    pub chunk_sizes: Option<Vec<(u64, u64)>>,
+    pub chunk_sz: usize,
+}
 
 #[allow(unused_variables)]
 pub trait EventsHandler {
@@ -120,15 +134,8 @@ impl FtpDownload {
 
 pub struct HttpDownload {
     url: Url,
-    chunk_sz: usize,
     hooks: Vec<RefCell<Box<dyn EventsHandler>>>,
-    headers: Headers,
-    timeout: Option<Duration>,
-    proxies: Option<HashMap<String, String>>,
-    concurrent: bool,
-    chunk_sizes: Option<Vec<(u64, u64)>>,
-    bytes_on_disk: Option<u64>,
-    max_retries: i32,
+    opts: Config,
     retries: i32,
 }
 
@@ -139,26 +146,11 @@ impl fmt::Debug for HttpDownload {
 }
 
 impl HttpDownload {
-    pub fn new(
-        url: Url,
-        headers: Headers,
-        timeout: Option<Duration>,
-        proxies: Option<HashMap<String, String>>,
-        concurrent: bool,
-        chunk_sizes: Option<Vec<(u64, u64)>>,
-        bytes_on_disk: Option<u64>,
-    ) -> HttpDownload {
+    pub fn new(url: Url, opts: Config) -> HttpDownload {
         HttpDownload {
             url,
-            chunk_sz: 5120,
             hooks: Vec::new(),
-            headers,
-            timeout,
-            proxies,
-            concurrent,
-            chunk_sizes,
-            bytes_on_disk,
-            max_retries: 100,
+            opts,
             retries: 0,
         }
     }
@@ -173,18 +165,18 @@ impl HttpDownload {
             None => false,
         };
         if server_supports_bytes {
-            if let Some(hdr) = self.headers.clone().get::<Range>() {
-                if !self.concurrent {
+            if let Some(hdr) = self.opts.headers.clone().get::<Range>() {
+                if !self.opts.concurrent {
                     req.header(hdr.clone());
                 }
-                self.headers.remove::<Range>();
+                self.opts.headers.remove::<Range>();
                 for hook in &self.hooks {
                     hook.borrow_mut().on_server_supports_resume();
                 }
             };
         }
 
-        req.headers(self.headers.clone());
+        req.headers(self.opts.headers.clone());
 
         let mut resp = req.send()?;
 
@@ -193,7 +185,7 @@ impl HttpDownload {
             for hk in &self.hooks {
                 hk.borrow_mut().on_headers(headers.clone());
             }
-            if server_supports_bytes && self.concurrent {
+            if server_supports_bytes && self.opts.concurrent {
                 self.concurrent_download(client, &headers)?;
             } else {
                 self.singlethread_download(&mut resp)?;
@@ -218,7 +210,7 @@ impl HttpDownload {
 
     fn singlethread_download(&mut self, resp: &mut Response) -> Fallible<()> {
         loop {
-            let mut buffer = vec![0; self.chunk_sz];
+            let mut buffer = vec![0; self.opts.chunk_sz];
             let bcount = resp.read(&mut buffer[..])?;
             buffer.truncate(bcount);
             if !buffer.is_empty() {
@@ -239,6 +231,7 @@ impl HttpDownload {
             .unwrap();
         let n_workers = 8;
         let chunk_sizes = self
+            .opts
             .chunk_sizes
             .clone()
             .unwrap_or_else(|| self.get_chunk_sizes(ct_len));
@@ -252,7 +245,7 @@ impl HttpDownload {
                 .execute(move || download_chunk(client, url, offsets, data_tx.clone(), errors_tx))
         }
 
-        let threshold = ct_len - self.bytes_on_disk.unwrap_or(0);
+        let threshold = ct_len - self.opts.bytes_on_disk.unwrap_or(0);
         let mut count = 0;
         loop {
             if count == threshold {
@@ -267,7 +260,7 @@ impl HttpDownload {
             match errors_rx.recv_timeout(Duration::from_micros(1)) {
                 Err(_) => {}
                 Ok(offsets) => {
-                    if self.retries > self.max_retries {
+                    if self.retries > self.opts.max_retries {
                         for hk in &self.hooks {
                             hk.borrow_mut().on_max_retries();
                         }
@@ -317,7 +310,7 @@ impl HttpDownload {
     fn get_reqwest_client(&self) -> Fallible<(Client)> {
         let mut builder = Client::builder()?;
 
-        if let Some(proxies) = self.proxies.clone() {
+        if let Some(proxies) = self.opts.proxies.clone() {
             if let Some(http_proxy) = proxies.get("http_proxy") {
                 builder.proxy(Proxy::http(Url::parse(http_proxy)?)?);
             }
@@ -327,7 +320,7 @@ impl HttpDownload {
             }
         };
 
-        if let Some(secs) = self.timeout {
+        if let Some(secs) = self.opts.timeout {
             builder.timeout(secs);
         }
 
