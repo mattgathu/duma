@@ -6,8 +6,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use failure::{bail, Fallible};
-use reqwest::header::{HeaderMap,  ACCEPT_RANGES, CONTENT_LENGTH, RANGE};
-use reqwest::{Client,  Proxy,  Response, StatusCode, Url};
+use reqwest::header::{HeaderMap, ACCEPT_RANGES, CONTENT_LENGTH, RANGE};
+use reqwest::{Client, Proxy, Response, StatusCode, Url};
 
 use threadpool::ThreadPool;
 
