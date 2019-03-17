@@ -9,26 +9,26 @@ use clap::ArgMatches;
 use console::style;
 use failure::Fallible;
 use indicatif::{HumanBytes, ProgressBar};
-use reqwest::header::{ByteRangeSpec, ContentLength, ContentType, Headers, Range, UserAgent};
+use reqwest::header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE, RANGE, USER_AGENT};
 use reqwest::{Client, StatusCode, Url};
 
 use crate::bar::create_progress_bar;
 use crate::core::{Config, EventsHandler, FtpDownload, HttpDownload};
 use crate::utils::get_file_handle;
 
-fn request_headers_from_server(url: &Url) -> Fallible<Headers> {
-    let client = Client::new()?;
-    let head_resp = client.head(url.clone())?.send()?;
+fn request_headers_from_server(url: &Url) -> Fallible<HeaderMap> {
+    let client = Client::new();
+    let head_resp = client.head(url.clone()).send()?;
 
     Ok(head_resp.headers().clone())
 }
 
-fn print_headers(headers: Headers) {
+fn print_headers(headers: HeaderMap) {
     for hdr in headers.iter() {
         println!(
             "{}: {}",
-            style(hdr.name()).red(),
-            style(hdr.value_string()).green()
+            style(hdr.0).red(),
+            style(hdr.1.to_str().unwrap_or("")).green()
         );
     }
 }
@@ -78,7 +78,7 @@ fn gen_filename(url: &Url, fname: Option<&str>) -> String {
     }
 }
 
-fn calc_bytes_on_disk(fname: &str) -> Option<u64> {
+fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
     // use state file if present
     let st_fname = format!("{}.st", fname);
     if Path::new(&st_fname).exists() {
@@ -91,25 +91,27 @@ fn calc_bytes_on_disk(fname: &str) -> Option<u64> {
             .map(|line| line.split(':').nth(0).unwrap())
             .map(|part| part.parse::<u64>().unwrap())
             .sum();
-        return Some(byte_count);
+        return Ok(Some(byte_count));
     }
     match fs::metadata(fname) {
-        Ok(metadata) => Some(metadata.len()),
-        _ => None,
+        Ok(metadata) => Ok(Some(metadata.len())),
+        _ => Ok(None),
     }
 }
 
-fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Headers {
-    let bytes_on_disk = calc_bytes_on_disk(fname);
-    let mut headers = Headers::new();
-    if resume && bytes_on_disk.is_some() {
-        let range_hdr = Range::Bytes(vec![ByteRangeSpec::AllFrom(bytes_on_disk.unwrap())]);
-        headers.set(range_hdr);
+fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<HeaderMap> {
+    let bytes_on_disk = calc_bytes_on_disk(fname)?;
+    let mut headers = HeaderMap::new();
+    if let Some(bcount) = bytes_on_disk {
+        if resume {
+            let byte_range = format!("bytes={}-", bcount);
+            headers.insert(RANGE, byte_range.parse()?);
+        }
     }
 
-    headers.set(UserAgent::new(user_agent.to_string()));
+    headers.insert(USER_AGENT, user_agent.parse()?);
 
-    headers
+    Ok(headers)
 }
 
 fn get_http_proxies() -> Option<HashMap<String, String>> {
@@ -132,7 +134,7 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Falli
     let fname = gen_filename(&url, filename);
 
     let mut client = FtpDownload::new(url.clone());
-    let events_handler = DefaultEventsHandler::new(&fname, false, false, quiet_mode);
+    let events_handler = DefaultEventsHandler::new(&fname, false, false, quiet_mode)?;
     client.events_hook(events_handler).download()?;
     Ok(())
 }
@@ -151,13 +153,14 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         print_headers(headers);
         return Ok(());
     }
-    let ct_len = headers
-        .get::<ContentLength>()
-        .map(|ct_len| **ct_len)
-        .unwrap_or(0);
+    let ct_len = if let Some(val) = headers.get(CONTENT_LENGTH) {
+        val.to_str()?.parse::<u64>().unwrap_or(0)
+    } else {
+        0u64
+    };
 
     let fname = gen_filename(&url, args.value_of("FILE"));
-    let headers = prep_headers(&fname, resume_download, &user_agent);
+    let headers = prep_headers(&fname, resume_download, &user_agent)?;
     let timeout = if let Some(secs) = args.value_of("SECONDS") {
         Some(Duration::new(secs.parse::<u64>()?, 0))
     } else {
@@ -174,7 +177,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
     };
 
     let bytes_on_disk = if resume_download {
-        calc_bytes_on_disk(&fname)
+        calc_bytes_on_disk(&fname)?
     } else {
         None
     };
@@ -196,7 +199,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
     let mut client = HttpDownload::new(url.clone(), conf.clone());
     let quiet_mode = args.is_present("quiet");
     let events_handler =
-        DefaultEventsHandler::new(&fname, resume_download, concurrent_download, quiet_mode);
+        DefaultEventsHandler::new(&fname, resume_download, concurrent_download, quiet_mode)?;
     client.events_hook(events_handler).download()?;
     Ok(())
 }
@@ -217,23 +220,24 @@ impl DefaultEventsHandler {
         resume: bool,
         concurrent: bool,
         quiet_mode: bool,
-    ) -> DefaultEventsHandler {
+    ) -> Fallible<DefaultEventsHandler> {
         let st_file = if concurrent {
-            Some(BufWriter::new(
-                get_file_handle(&format!("{}.st", fname), resume).unwrap(),
-            ))
+            Some(BufWriter::new(get_file_handle(
+                &format!("{}.st", fname),
+                resume,
+            )?))
         } else {
             None
         };
-        DefaultEventsHandler {
+        Ok(DefaultEventsHandler {
             prog_bar: None,
-            bytes_on_disk: calc_bytes_on_disk(fname),
+            bytes_on_disk: calc_bytes_on_disk(fname)?,
             fname: fname.to_owned(),
-            file: BufWriter::new(get_file_handle(fname, resume).unwrap()),
+            file: BufWriter::new(get_file_handle(fname, resume)?),
             st_file,
             server_supports_resume: false,
             quiet_mode,
-        }
+        })
     }
 
     fn create_prog_bar(&mut self, length: Option<u64>) {
@@ -252,23 +256,33 @@ impl DefaultEventsHandler {
         }
 
         let prog_bar = create_progress_bar(&self.fname, length);
-        if byte_count.is_some() {
-            prog_bar.inc(byte_count.unwrap());
+        if let Some(count) = byte_count {
+            prog_bar.inc(count);
         }
         self.prog_bar = Some(prog_bar);
     }
 }
 
 impl EventsHandler for DefaultEventsHandler {
-    fn on_headers(&mut self, headers: Headers) {
+    fn on_headers(&mut self, headers: HeaderMap) {
         if self.quiet_mode {
             return;
         }
-        let ct_type = headers.get::<ContentType>().unwrap();
+        let ct_type = if let Some(val) = headers.get(CONTENT_TYPE) {
+            val.to_str().unwrap_or("")
+        } else {
+            ""
+        };
         println!("Type: {}", style(ct_type).green());
 
         println!("Saving to: {}", style(&self.fname).green());
-        let ct_len = headers.get::<ContentLength>().map(|ct_len| **ct_len);
+        let ct_len = headers
+            .get(CONTENT_LENGTH)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse::<u64>()
+            .ok();
 
         self.create_prog_bar(ct_len);
     }
@@ -323,9 +337,13 @@ impl EventsHandler for DefaultEventsHandler {
         if !self.quiet_mode {
             eprintln!("{}", style("max retries exceeded. Quitting!").red());
         }
-        self.file.flush().unwrap();
+        match self.file.flush() {
+            _ => {}
+        }
         if let Some(ref mut file) = self.st_file {
-            file.flush().unwrap()
+            match file.flush() {
+                _ => {}
+            }
         }
         ::std::process::exit(0);
     }
