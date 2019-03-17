@@ -13,7 +13,7 @@ use reqwest::header::{ByteRangeSpec, ContentLength, ContentType, Headers, Range,
 use reqwest::{Client, StatusCode, Url};
 
 use crate::bar::create_progress_bar;
-use crate::core::{EventsHandler, FtpDownload, HttpDownload};
+use crate::core::{Config, EventsHandler, FtpDownload, HttpDownload};
 use crate::utils::get_file_handle;
 
 fn request_headers_from_server(url: &Url) -> Fallible<Headers> {
@@ -99,7 +99,7 @@ fn calc_bytes_on_disk(fname: &str) -> Option<u64> {
     }
 }
 
-fn prep_headers(fname: &str, resume: bool, user_agent: String) -> Headers {
+fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Headers {
     let bytes_on_disk = calc_bytes_on_disk(fname);
     let mut headers = Headers::new();
     if resume && bytes_on_disk.is_some() {
@@ -107,7 +107,7 @@ fn prep_headers(fname: &str, resume: bool, user_agent: String) -> Headers {
         headers.set(range_hdr);
     }
 
-    headers.set(UserAgent::new(user_agent));
+    headers.set(UserAgent::new(user_agent.to_string()));
 
     headers
 }
@@ -132,13 +132,8 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Falli
     let fname = gen_filename(&url, filename);
 
     let mut client = FtpDownload::new(url.clone());
-    if !quiet_mode {
-        let events_handler = DefaultEventsHandler::new(&fname, false, false);
-        client.events_hook(events_handler).download()?;
-    } else {
-        let events_handler = QuietEventsHandler::new(&fname, false);
-        client.events_hook(events_handler).download()?;
-    }
+    let events_handler = DefaultEventsHandler::new(&fname, false, false, quiet_mode);
+    client.events_hook(events_handler).download()?;
     Ok(())
 }
 
@@ -162,7 +157,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         .unwrap_or(0);
 
     let fname = gen_filename(&url, args.value_of("FILE"));
-    let headers = prep_headers(&fname, resume_download, user_agent);
+    let headers = prep_headers(&fname, resume_download, &user_agent);
     let timeout = if let Some(secs) = args.value_of("SECONDS") {
         Some(Duration::new(secs.parse::<u64>()?, 0))
     } else {
@@ -184,23 +179,25 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         None
     };
 
-    let mut client = HttpDownload::new(
-        url.clone(),
+    let conf = Config {
+        user_agent: user_agent.clone(),
+        resume: resume_download,
         headers,
+        file: fname.clone(),
         timeout,
+        concurrent: concurrent_download,
         proxies,
-        concurrent_download,
-        chunk_sizes,
+        max_retries: 100,
         bytes_on_disk,
-    );
-    if !args.is_present("quiet") {
-        let events_handler =
-            DefaultEventsHandler::new(&fname, resume_download, concurrent_download);
-        client.events_hook(events_handler).download()?;
-    } else {
-        let events_handler = QuietEventsHandler::new(&fname, resume_download);
-        client.events_hook(events_handler).download()?;
-    }
+        chunk_sizes,
+        chunk_sz: 512_000,
+    };
+
+    let mut client = HttpDownload::new(url.clone(), conf.clone());
+    let quiet_mode = args.is_present("quiet");
+    let events_handler =
+        DefaultEventsHandler::new(&fname, resume_download, concurrent_download, quiet_mode);
+    client.events_hook(events_handler).download()?;
     Ok(())
 }
 
@@ -211,10 +208,16 @@ pub struct DefaultEventsHandler {
     file: BufWriter<fs::File>,
     st_file: Option<BufWriter<fs::File>>,
     server_supports_resume: bool,
+    quiet_mode: bool,
 }
 
 impl DefaultEventsHandler {
-    pub fn new(fname: &str, resume: bool, concurrent: bool) -> DefaultEventsHandler {
+    pub fn new(
+        fname: &str,
+        resume: bool,
+        concurrent: bool,
+        quiet_mode: bool,
+    ) -> DefaultEventsHandler {
         let st_file = if concurrent {
             Some(BufWriter::new(
                 get_file_handle(&format!("{}.st", fname), resume).unwrap(),
@@ -229,6 +232,7 @@ impl DefaultEventsHandler {
             file: BufWriter::new(get_file_handle(fname, resume).unwrap()),
             st_file,
             server_supports_resume: false,
+            quiet_mode,
         }
     }
 
@@ -257,6 +261,9 @@ impl DefaultEventsHandler {
 
 impl EventsHandler for DefaultEventsHandler {
     fn on_headers(&mut self, headers: Headers) {
+        if self.quiet_mode {
+            return;
+        }
         let ct_type = headers.get::<ContentType>().unwrap();
         println!("Type: {}", style(ct_type).green());
 
@@ -267,7 +274,9 @@ impl EventsHandler for DefaultEventsHandler {
     }
 
     fn on_ftp_content_length(&mut self, ct_len: Option<u64>) {
-        self.create_prog_bar(ct_len);
+        if !self.quiet_mode {
+            self.create_prog_bar(ct_len);
+        }
     }
 
     fn on_server_supports_resume(&mut self) {
@@ -277,7 +286,9 @@ impl EventsHandler for DefaultEventsHandler {
     fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
         let byte_count = content.len() as u64;
         self.file.write_all(content)?;
-        self.prog_bar.as_mut().unwrap().inc(byte_count);
+        if let Some(ref mut b) = self.prog_bar {
+            b.inc(byte_count);
+        }
 
         Ok(())
     }
@@ -286,7 +297,9 @@ impl EventsHandler for DefaultEventsHandler {
         let (byte_count, offset, buf) = content;
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(buf)?;
-        self.prog_bar.as_mut().unwrap().inc(byte_count);
+        if let Some(ref mut b) = self.prog_bar {
+            b.inc(byte_count);
+        }
         if let Some(ref mut file) = self.st_file {
             writeln!(file, "{}:{}", byte_count, offset)?;
         }
@@ -298,14 +311,18 @@ impl EventsHandler for DefaultEventsHandler {
     }
 
     fn on_finish(&mut self) {
-        self.prog_bar.as_mut().unwrap().finish();
+        if let Some(ref mut b) = self.prog_bar {
+            b.finish();
+        }
         match fs::remove_file(&format!("{}.st", self.fname)) {
             _ => {}
         }
     }
 
     fn on_max_retries(&mut self) {
-        eprintln!("{}", style("max retries exceeded. Quitting!").red());
+        if !self.quiet_mode {
+            eprintln!("{}", style("max retries exceeded. Quitting!").red());
+        }
         self.file.flush().unwrap();
         if let Some(ref mut file) = self.st_file {
             file.flush().unwrap()
@@ -314,31 +331,14 @@ impl EventsHandler for DefaultEventsHandler {
     }
 
     fn on_failure_status(&self, status: StatusCode) {
+        if self.quiet_mode {
+            return;
+        }
         if status.as_u16() == 416 {
             println!(
                 "{}",
                 &style("\nThe file is already fully retrieved; nothing to do.\n").red()
             );
         }
-    }
-}
-
-struct QuietEventsHandler {
-    file: BufWriter<fs::File>,
-}
-
-impl QuietEventsHandler {
-    pub fn new(fname: &str, resume: bool) -> Self {
-        Self {
-            file: BufWriter::new(get_file_handle(fname, resume).unwrap()),
-        }
-    }
-}
-
-impl EventsHandler for QuietEventsHandler {
-    fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
-        self.file.write_all(content)?;
-
-        Ok(())
     }
 }
