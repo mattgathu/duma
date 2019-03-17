@@ -5,9 +5,10 @@ use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use failure::Fallible;
-use reqwest::header::{AcceptRanges, ByteRangeSpec, ContentLength, Headers, Range, RangeUnit};
-use reqwest::{Client, Proxy, Response, StatusCode, Url};
+use failure::{bail, Fallible};
+use reqwest::header::{HeaderMap,  ACCEPT_RANGES, CONTENT_LENGTH, RANGE};
+use reqwest::{Client,  Proxy,  Response, StatusCode, Url};
+
 use threadpool::ThreadPool;
 
 use ftp::FtpStream;
@@ -16,7 +17,7 @@ use ftp::FtpStream;
 pub struct Config {
     pub user_agent: String,
     pub resume: bool,
-    pub headers: Headers,
+    pub headers: HeaderMap,
     pub file: String,
     pub timeout: Option<Duration>,
     pub concurrent: bool,
@@ -31,7 +32,7 @@ pub struct Config {
 pub trait EventsHandler {
     fn on_resume_download(&mut self, bytes_on_disk: u64) {}
 
-    fn on_headers(&mut self, headers: Headers) {}
+    fn on_headers(&mut self, headers: HeaderMap) {}
 
     fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
         Ok(())
@@ -94,17 +95,13 @@ impl FtpDownload {
         let mut reader = conn.get(ftp_fname)?;
 
         for hook in &self.hooks {
-            let ct_len = if ct_len.is_some() {
-                Some(ct_len.unwrap() as u64)
-            } else {
-                None
-            };
+            let ct_len = ct_len.map(|x| x as u64);
             hook.borrow_mut().on_ftp_content_length(ct_len);
         }
 
         loop {
             let mut buffer = vec![0; 2048usize];
-            let bcount = reader.read(&mut buffer[..]).unwrap();
+            let bcount = reader.read(&mut buffer[..])?;
             buffer.truncate(bcount);
             if !buffer.is_empty() {
                 self.send_content(buffer.as_slice())?;
@@ -157,26 +154,32 @@ impl HttpDownload {
 
     pub fn download(&mut self) -> Fallible<()> {
         let client = self.get_reqwest_client()?;
-        let mut req = client.get(self.url.clone())?;
-        let head_resp = client.head(self.url.clone())?.send()?;
+        let mut req = client.get(self.url.clone());
+        let head_resp = client.head(self.url.clone()).send()?;
 
-        let server_supports_bytes = match head_resp.headers().get::<AcceptRanges>() {
-            Some(header) => header.contains(&RangeUnit::Bytes),
+        let server_supports_bytes = match head_resp.headers().get(ACCEPT_RANGES) {
+            Some(val) => {
+                if let Ok(unit) = val.to_str() {
+                    unit == "bytes"
+                } else {
+                    false
+                }
+            }
             None => false,
         };
         if server_supports_bytes {
-            if let Some(hdr) = self.opts.headers.clone().get::<Range>() {
+            if let Some(range) = self.opts.headers.clone().get(RANGE) {
                 if !self.opts.concurrent {
-                    req.header(hdr.clone());
+                    req = req.header(RANGE, range);
                 }
-                self.opts.headers.remove::<Range>();
+                self.opts.headers.remove(RANGE);
                 for hook in &self.hooks {
                     hook.borrow_mut().on_server_supports_resume();
                 }
             };
         }
 
-        req.headers(self.opts.headers.clone());
+        req = req.headers(self.opts.headers.clone());
 
         let mut resp = req.send()?;
 
@@ -222,13 +225,14 @@ impl HttpDownload {
         Ok(())
     }
 
-    pub fn concurrent_download(&mut self, client: Client, headers: &Headers) -> Fallible<()> {
+    pub fn concurrent_download(&mut self, client: Client, headers: &HeaderMap) -> Fallible<()> {
         let (data_tx, data_rx) = mpsc::channel();
         let (errors_tx, errors_rx) = mpsc::channel();
-        let ct_len = headers
-            .get::<ContentLength>()
-            .map(|ct_len| **ct_len)
-            .unwrap();
+        let ct_len = if let Some(val) = headers.get(CONTENT_LENGTH) {
+            val.to_str()?.parse::<u64>()?
+        } else {
+            bail!("concurrent download: server did not return content-length header")
+        };
         let n_workers = 8;
         let chunk_sizes = self
             .opts
@@ -308,20 +312,20 @@ impl HttpDownload {
     }
 
     fn get_reqwest_client(&self) -> Fallible<(Client)> {
-        let mut builder = Client::builder()?;
+        let mut builder = Client::builder();
 
         if let Some(proxies) = self.opts.proxies.clone() {
             if let Some(http_proxy) = proxies.get("http_proxy") {
-                builder.proxy(Proxy::http(Url::parse(http_proxy)?)?);
+                builder = builder.proxy(Proxy::http(Url::parse(http_proxy)?)?);
             }
 
             if let Some(https_proxy) = proxies.get("https_proxy") {
-                builder.proxy(Proxy::https(Url::parse(https_proxy)?)?);
+                builder = builder.proxy(Proxy::https(Url::parse(https_proxy)?)?);
             }
         };
 
         if let Some(secs) = self.opts.timeout {
-            builder.timeout(secs);
+            builder = builder.timeout(secs);
         }
 
         Ok(builder.build()?)
@@ -342,12 +346,12 @@ fn download_chunk(
         sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
         start_offset: &mut u64,
     ) -> Fallible<()> {
-        let byte_range = Range::Bytes(vec![ByteRangeSpec::FromTo(offsets.0, offsets.1)]);
-        let mut resp = client.get(url)?.header(byte_range).send()?;
+        let byte_range = format!("bytes={}-{}", offsets.0, offsets.1);
+        let mut resp = client.get(url).header(RANGE, byte_range).send()?;
         let chunk_sz = offsets.1 - offsets.0;
         loop {
             let mut buf = vec![0; chunk_sz as usize];
-            let byte_count = resp.read(&mut buf[..]).unwrap();
+            let byte_count = resp.read(&mut buf[..])?;
             buf.truncate(byte_count);
             if !buf.is_empty() {
                 sender.send((byte_count as u64, *start_offset, buf.clone()))?;
