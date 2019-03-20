@@ -5,7 +5,7 @@ use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use failure::{bail, Fallible};
+use failure::{bail, format_err, Fallible};
 use reqwest::header::{HeaderMap, ACCEPT_RANGES, CONTENT_LENGTH, RANGE};
 use reqwest::{Client, Proxy, Response, StatusCode, Url};
 
@@ -73,8 +73,14 @@ impl FtpDownload {
     pub fn download(&mut self) -> Fallible<()> {
         let ftp_server = format!(
             "{}:{}",
-            self.url.host_str().unwrap(),
-            self.url.port_or_known_default().unwrap()
+            self.url.host_str().ok_or(format_err!(
+                "failed to parse hostname from url: {}",
+                self.url
+            ))?,
+            self.url.port_or_known_default().ok_or(format_err!(
+                "failed to parse hostname from url: {}",
+                self.url
+            ))?,
         );
         let username = if self.url.username().is_empty() {
             "anonymous"
@@ -83,8 +89,15 @@ impl FtpDownload {
         };
         let password = self.url.password().unwrap_or("anonymous");
 
-        let mut path_segments: Vec<&str> = self.url.path_segments().unwrap().collect();
-        let ftp_fname = path_segments.pop().unwrap();
+        let mut path_segments: Vec<&str> = self
+            .url
+            .path_segments()
+            .ok_or(format_err!("failed to get url path segments: {}", self.url))?
+            .collect();
+        let ftp_fname = path_segments.pop().ok_or(format_err!(
+            "got empty path segments from url: {}",
+            self.url
+        ))?;
 
         let mut conn = FtpStream::connect(ftp_server)?;
         conn.login(username, password)?;
@@ -367,8 +380,8 @@ fn download_chunk(
     let end_offset = offsets.1;
     match _download_chunk(client, url, offsets, sender, &mut start_offset) {
         Ok(_) => {}
-        Err(_) => {
-            errors.send((start_offset, end_offset)).unwrap();
-        }
+        Err(_) => match errors.send((start_offset, end_offset)) {
+            _ => {}
+        },
     }
 }

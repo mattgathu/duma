@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use clap::ArgMatches;
 use console::style;
-use failure::Fallible;
+use failure::{format_err, Fallible};
 use indicatif::{HumanBytes, ProgressBar};
 use reqwest::header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE, RANGE, USER_AGENT};
 use reqwest::{Client, StatusCode, Url};
@@ -41,11 +41,9 @@ fn get_resume_chunk_sizes(fname: &str, ct_len: u64) -> Fallible<Vec<(u64, u64)>>
     let mut lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
     lines.pop(); // throw last line away to avoid partial written line
     for line in lines {
-        let l = line
-            .split(':')
-            .map(|x| x.parse::<u64>().unwrap())
-            .collect::<Vec<u64>>();
-        downloaded.push((l[0], l[1]));
+        let l = line.split(':').collect::<Vec<_>>();
+        let n = (l[0].parse::<u64>()?, l[1].parse::<u64>()?);
+        downloaded.push(n);
     }
     downloaded.sort_by_key(|a| a.1);
     let mut chunks = vec![];
@@ -68,7 +66,7 @@ fn gen_filename(url: &Url, fname: Option<&str>) -> String {
     match fname {
         Some(name) => name.to_owned(),
         None => {
-            let name = &url.path().split('/').last().unwrap();
+            let name = &url.path().split('/').last().unwrap_or("");
             if !name.is_empty() {
                 name.to_string()
             } else {
@@ -82,15 +80,19 @@ fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
     // use state file if present
     let st_fname = format!("{}.st", fname);
     if Path::new(&st_fname).exists() {
-        let input = fs::File::open(st_fname).unwrap();
+        let input = fs::File::open(st_fname)?;
         let buf = BufReader::new(input);
         let mut lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
         lines.pop();
-        let byte_count: u64 = lines
-            .iter()
-            .map(|line| line.split(':').nth(0).unwrap())
-            .map(|part| part.parse::<u64>().unwrap())
-            .sum();
+        let mut byte_count: u64 = 0;
+        for line in lines {
+            let num_of_bytes = line
+                .split(':')
+                .nth(0)
+                .ok_or(format_err!("failed to split state file line: {}", line))?
+                .parse::<u64>()?;
+            byte_count += num_of_bytes;
+        }
         return Ok(Some(byte_count));
     }
     match fs::metadata(fname) {
@@ -276,15 +278,16 @@ impl EventsHandler for DefaultEventsHandler {
         println!("Type: {}", style(ct_type).green());
 
         println!("Saving to: {}", style(&self.fname).green());
-        let ct_len = headers
-            .get(CONTENT_LENGTH)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .parse::<u64>()
-            .ok();
-
-        self.create_prog_bar(ct_len);
+        if let Some(val) = headers.get(CONTENT_LENGTH) {
+            if let Ok(s) = val.to_str() {
+                self.create_prog_bar(s.parse::<u64>().ok());
+            }
+        } else {
+            println!(
+                "{}",
+                style("Got no content-length. Progress bar skipped.").red()
+            );
+        }
     }
 
     fn on_ftp_content_length(&mut self, ct_len: Option<u64>) {

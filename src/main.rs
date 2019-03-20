@@ -3,7 +3,7 @@ use std::process;
 use clap::{clap_app, crate_version};
 use duma::download::{ftp_download, http_download};
 use duma::utils;
-use failure::Fallible;
+use failure::{format_err, Fallible};
 
 fn main() {
     match run() {
@@ -31,7 +31,10 @@ fn run() -> Fallible<()> {
     )
     .get_matches_safe()?;
 
-    let url = utils::parse_url(args.value_of("URL").unwrap())?;
+    let url = utils::parse_url(
+        args.value_of("URL")
+            .ok_or(format_err!("missing URL argument"))?,
+    )?;
     let quiet_mode = args.is_present("quiet");
     let file_name = args.value_of("FILE");
 
