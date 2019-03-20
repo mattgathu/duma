@@ -78,7 +78,7 @@ impl FtpDownload {
                 self.url
             ))?,
             self.url.port_or_known_default().ok_or(format_err!(
-                "failed to parse hostname from url: {}",
+                "failed to parse port from url: {}",
                 self.url
             ))?,
         );
