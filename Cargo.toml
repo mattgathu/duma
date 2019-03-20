@@ -14,4 +14,4 @@ threadpool = "1.7.1"
 failure = "0.1.2"
 
 [dev-dependencies]
-assert_cli = "0.4"
+assert_cmd = "0.11"
