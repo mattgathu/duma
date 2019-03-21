@@ -23,6 +23,7 @@ pub struct Config {
     pub concurrent: bool,
     pub proxies: Option<HashMap<String, String>>,
     pub max_retries: i32,
+    pub num_workers: usize,
     pub bytes_on_disk: Option<u64>,
     pub chunk_sizes: Option<Vec<(u64, u64)>>,
     pub chunk_sz: usize,
@@ -246,7 +247,7 @@ impl HttpDownload {
         } else {
             bail!("concurrent download: server did not return content-length header")
         };
-        let n_workers = 8;
+        let n_workers = self.opts.num_workers;
         let chunk_sizes = self
             .opts
             .chunk_sizes
