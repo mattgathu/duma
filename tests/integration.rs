@@ -1,35 +1,25 @@
-extern crate assert_cli;
-
 #[cfg(test)]
 mod integration {
-    use assert_cli;
+    use assert_cmd::prelude::*;
+    use std::process::Command;
 
     #[test]
     fn calling_duma_without_args() {
-        assert_cli::Assert::main_binary()
-            .fails()
-            .and()
-            .prints_error("error: The following required arguments were not provided:")
-            .unwrap();
+        let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+        cmd.assert().failure();
     }
 
     #[test]
     fn calling_duma_with_invalid_url() {
-        assert_cli::Assert::main_binary()
-            .with_args(&["wwww.shouldnotwork.com"])
-            .fails()
-            .and()
-            .prints_error("error:")
-            .unwrap();
+        let mut cmd: Command = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+        cmd.args(&["wwww.shouldnotwork.com"]).assert().failure();
     }
 
     #[test]
     fn test_request_timeout() {
-        assert_cli::Assert::main_binary()
-            .with_args(&["-T", "3", "https://httpbin.org/delay/60"])
-            .fails()
-            .and()
-            .prints_error("timed out")
-            .unwrap();
+        let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+        cmd.args(&["-T", "3", "https://httpbin.org/delay/60"])
+            .assert()
+            .failure();
     }
 }
