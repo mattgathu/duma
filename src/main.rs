@@ -27,6 +27,7 @@ fn run() -> Fallible<()> {
     (@arg FILE: -O --output +takes_value "write documents to FILE")
     (@arg AGENT: -U --useragent +takes_value "identify as AGENT instead of Duma/VERSION")
     (@arg SECONDS: -T --timeout +takes_value "set all timeout values to SECONDS")
+    (@arg NUM_CONNECTIONS: -n --num_connections +takes_value "maximum number of concurrent connections (default is 8)")
     (@arg URL: +required +takes_value "url to download")
     )
     .get_matches_safe()?;
