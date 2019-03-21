@@ -168,6 +168,11 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
     } else {
         None
     };
+    let num_workers = if let Some(num) = args.value_of("NUM_CONNECTIONS") {
+        num.parse::<usize>()?
+    } else {
+        8usize
+    };
     let proxies = get_http_proxies();
     let state_file_exists = Path::new(&format!("{}.st", fname)).exists();
 
@@ -193,6 +198,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         concurrent: concurrent_download,
         proxies,
         max_retries: 100,
+        num_workers,
         bytes_on_disk,
         chunk_sizes,
         chunk_sz: 512_000,
