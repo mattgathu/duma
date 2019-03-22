@@ -34,7 +34,7 @@ fn run() -> Fallible<()> {
 
     let url = utils::parse_url(
         args.value_of("URL")
-            .ok_or(format_err!("missing URL argument"))?,
+            .ok_or_else(|| format_err!("missing URL argument"))?,
     )?;
     let quiet_mode = args.is_present("quiet");
     let file_name = args.value_of("FILE");

@@ -33,13 +33,16 @@ fn print_headers(headers: HeaderMap) {
     }
 }
 
-fn get_resume_chunk_sizes(fname: &str, ct_len: u64) -> Fallible<Vec<(u64, u64)>> {
+fn get_resume_chunk_offsets(
+    fname: &str,
+    ct_len: u64,
+    chunk_size: u64,
+) -> Fallible<Vec<(u64, u64)>> {
     let st_fname = format!("{}.st", fname);
     let input = fs::File::open(st_fname)?;
     let buf = BufReader::new(input);
     let mut downloaded = vec![];
-    let mut lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
-    lines.pop(); // throw last line away to avoid partial written line
+    let lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
     for line in lines {
         let l = line.split(':').collect::<Vec<_>>();
         let n = (l[0].parse::<u64>()?, l[1].parse::<u64>()?);
@@ -53,9 +56,15 @@ fn get_resume_chunk_sizes(fname: &str, ct_len: u64) -> Fallible<Vec<(u64, u64)>>
         if i == idx {
             i = idx + bc;
         } else {
+            debug_assert!(i < idx);
             chunks.push((i, idx));
             i = idx + bc;
         }
+    }
+
+    while (ct_len - i) > chunk_size {
+        chunks.push((i, i + chunk_size));
+        i += chunk_size;
     }
     chunks.push((i, ct_len));
 
@@ -82,14 +91,13 @@ fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
     if Path::new(&st_fname).exists() {
         let input = fs::File::open(st_fname)?;
         let buf = BufReader::new(input);
-        let mut lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
-        lines.pop();
+        let lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
         let mut byte_count: u64 = 0;
         for line in lines {
             let num_of_bytes = line
                 .split(':')
                 .nth(0)
-                .ok_or(format_err!("failed to split state file line: {}", line))?
+                .ok_or_else(|| format_err!("failed to split state file line: {}", line))?
                 .parse::<u64>()?;
             byte_count += num_of_bytes;
         }
@@ -175,13 +183,14 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
     };
     let proxies = get_http_proxies();
     let state_file_exists = Path::new(&format!("{}.st", fname)).exists();
+    let chunk_size = 512_000u64;
 
-    let chunk_sizes = if state_file_exists && resume_download && concurrent_download && ct_len != 0
-    {
-        Some(get_resume_chunk_sizes(&fname, ct_len)?)
-    } else {
-        None
-    };
+    let chunk_offsets =
+        if state_file_exists && resume_download && concurrent_download && ct_len != 0 {
+            Some(get_resume_chunk_offsets(&fname, ct_len, chunk_size)?)
+        } else {
+            None
+        };
 
     let bytes_on_disk = if resume_download {
         calc_bytes_on_disk(&fname)?
@@ -200,8 +209,8 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         max_retries: 100,
         num_workers,
         bytes_on_disk,
-        chunk_sizes,
-        chunk_sz: 512_000,
+        chunk_offsets,
+        chunk_size,
     };
 
     let mut client = HttpDownload::new(url.clone(), conf.clone());
@@ -320,11 +329,13 @@ impl EventsHandler for DefaultEventsHandler {
         let (byte_count, offset, buf) = content;
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(buf)?;
+        self.file.flush()?;
         if let Some(ref mut b) = self.prog_bar {
             b.inc(byte_count);
         }
         if let Some(ref mut file) = self.st_file {
             writeln!(file, "{}:{}", byte_count, offset)?;
+            file.flush()?;
         }
         Ok(())
     }

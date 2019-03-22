@@ -25,8 +25,8 @@ pub struct Config {
     pub max_retries: i32,
     pub num_workers: usize,
     pub bytes_on_disk: Option<u64>,
-    pub chunk_sizes: Option<Vec<(u64, u64)>>,
-    pub chunk_sz: usize,
+    pub chunk_offsets: Option<Vec<(u64, u64)>>,
+    pub chunk_size: u64,
 }
 
 #[allow(unused_variables)]
@@ -74,14 +74,12 @@ impl FtpDownload {
     pub fn download(&mut self) -> Fallible<()> {
         let ftp_server = format!(
             "{}:{}",
-            self.url.host_str().ok_or(format_err!(
-                "failed to parse hostname from url: {}",
-                self.url
-            ))?,
-            self.url.port_or_known_default().ok_or(format_err!(
-                "failed to parse port from url: {}",
-                self.url
-            ))?,
+            self.url
+                .host_str()
+                .ok_or_else(|| format_err!("failed to parse hostname from url: {}", self.url))?,
+            self.url
+                .port_or_known_default()
+                .ok_or_else(|| format_err!("failed to parse port from url: {}", self.url))?,
         );
         let username = if self.url.username().is_empty() {
             "anonymous"
@@ -93,12 +91,11 @@ impl FtpDownload {
         let mut path_segments: Vec<&str> = self
             .url
             .path_segments()
-            .ok_or(format_err!("failed to get url path segments: {}", self.url))?
+            .ok_or_else(|| format_err!("failed to get url path segments: {}", self.url))?
             .collect();
-        let ftp_fname = path_segments.pop().ok_or(format_err!(
-            "got empty path segments from url: {}",
-            self.url
-        ))?;
+        let ftp_fname = path_segments
+            .pop()
+            .ok_or_else(|| format_err!("got empty path segments from url: {}", self.url))?;
 
         let mut conn = FtpStream::connect(ftp_server)?;
         conn.login(username, password)?;
@@ -181,16 +178,13 @@ impl HttpDownload {
             }
             None => false,
         };
-        if server_supports_bytes {
-            if let Some(range) = self.opts.headers.clone().get(RANGE) {
-                if !self.opts.concurrent {
-                    req = req.header(RANGE, range);
+        if server_supports_bytes && self.opts.headers.clone().get(RANGE).is_some() {
+                if self.opts.concurrent {
+                    self.opts.headers.remove(RANGE);
                 }
-                self.opts.headers.remove(RANGE);
                 for hook in &self.hooks {
                     hook.borrow_mut().on_server_supports_resume();
                 }
-            };
         }
 
         req = req.headers(self.opts.headers.clone());
@@ -227,7 +221,7 @@ impl HttpDownload {
 
     fn singlethread_download(&mut self, resp: &mut Response) -> Fallible<()> {
         loop {
-            let mut buffer = vec![0; self.opts.chunk_sz];
+            let mut buffer = vec![0; self.opts.chunk_size as usize];
             let bcount = resp.read(&mut buffer[..])?;
             buffer.truncate(bcount);
             if !buffer.is_empty() {
@@ -248,13 +242,14 @@ impl HttpDownload {
             bail!("concurrent download: server did not return content-length header")
         };
         let n_workers = self.opts.num_workers;
-        let chunk_sizes = self
+        let chunk_offsets = self
             .opts
-            .chunk_sizes
+            .chunk_offsets
             .clone()
-            .unwrap_or_else(|| self.get_chunk_sizes(ct_len));
+            .unwrap_or_else(|| self.get_chunk_offsets(ct_len, self.opts.chunk_size));
         let worker_pool = ThreadPool::new(n_workers);
-        for offsets in chunk_sizes {
+        for offsets in chunk_offsets {
+            debug_assert!(offsets.0 < offsets.1);
             let data_tx = data_tx.clone();
             let errors_tx = errors_tx.clone();
             let url = self.url.clone();
@@ -263,10 +258,9 @@ impl HttpDownload {
                 .execute(move || download_chunk(client, url, offsets, data_tx.clone(), errors_tx))
         }
 
-        let threshold = ct_len - self.opts.bytes_on_disk.unwrap_or(0);
-        let mut count = 0;
+        let mut count = self.opts.bytes_on_disk.unwrap_or(0);
         loop {
-            if count == threshold {
+            if count == ct_len {
                 break;
             }
             let (byte_count, offset, buf) = data_rx.recv()?;
@@ -297,8 +291,7 @@ impl HttpDownload {
         Ok(())
     }
 
-    fn get_chunk_sizes(&self, ct_len: u64) -> Vec<(u64, u64)> {
-        let chunk_size = 512_000;
+    fn get_chunk_offsets(&self, ct_len: u64, chunk_size: u64) -> Vec<(u64, u64)> {
         let no_of_chunks = ct_len / chunk_size;
         let mut sizes = Vec::new();
 
