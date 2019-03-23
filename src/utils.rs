@@ -20,11 +20,18 @@ pub fn gen_error(msg: String) -> Fallible<()> {
     bail!(msg)
 }
 
-pub fn get_file_handle(fname: &str, resume_download: bool) -> io::Result<File> {
+pub fn get_file_handle(fname: &str, resume_download: bool, append: bool) -> io::Result<File> {
     if resume_download && Path::new(fname).exists() {
-        match OpenOptions::new().append(true).open(fname) {
-            Ok(file) => Ok(file),
-            Err(error) => Err(error),
+        if append {
+            match OpenOptions::new().append(true).open(fname) {
+                Ok(file) => Ok(file),
+                Err(error) => Err(error),
+            }
+        } else {
+            match OpenOptions::new().write(true).open(fname) {
+                Ok(file) => Ok(file),
+                Err(error) => Err(error),
+            }
         }
     } else {
         match OpenOptions::new().write(true).create(true).open(fname) {
