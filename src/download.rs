@@ -42,9 +42,9 @@ fn get_resume_chunk_offsets(
     let input = fs::File::open(st_fname)?;
     let buf = BufReader::new(input);
     let mut downloaded = vec![];
-    let lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
-    for line in lines {
-        let l = line.split(':').collect::<Vec<_>>();
+    for line in buf.lines() {
+        let l = line?;
+        let l = l.split(':').collect::<Vec<_>>();
         let n = (l[0].parse::<u64>()?, l[1].parse::<u64>()?);
         downloaded.push(n);
     }
@@ -52,18 +52,17 @@ fn get_resume_chunk_offsets(
     let mut chunks = vec![];
 
     let mut i: u64 = 0;
-    for (bc, idx) in downloaded {
-        if i == idx {
-            i = idx + bc;
+    for (bc, offset) in downloaded {
+        if i == offset {
+            i = offset + bc;
         } else {
-            debug_assert!(i < idx);
-            chunks.push((i, idx));
-            i = idx + bc;
+            chunks.push((i, offset - 1));
+            i = offset + bc;
         }
     }
 
     while (ct_len - i) > chunk_size {
-        chunks.push((i, i + chunk_size));
+        chunks.push((i, i + chunk_size - 1));
         i += chunk_size;
     }
     chunks.push((i, ct_len));
@@ -91,13 +90,12 @@ fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
     if Path::new(&st_fname).exists() {
         let input = fs::File::open(st_fname)?;
         let buf = BufReader::new(input);
-        let lines = buf.lines().filter_map(|l| l.ok()).collect::<Vec<String>>();
         let mut byte_count: u64 = 0;
-        for line in lines {
-            let num_of_bytes = line
+        for line in buf.lines() {
+            let num_of_bytes = line?
                 .split(':')
                 .nth(0)
-                .ok_or_else(|| format_err!("failed to split state file line: {}", line))?
+                .ok_or_else(|| format_err!("failed to split state file line"))?
                 .parse::<u64>()?;
             byte_count += num_of_bytes;
         }
@@ -242,6 +240,7 @@ impl DefaultEventsHandler {
             Some(BufWriter::new(get_file_handle(
                 &format!("{}.st", fname),
                 resume,
+                true,
             )?))
         } else {
             None
@@ -250,7 +249,7 @@ impl DefaultEventsHandler {
             prog_bar: None,
             bytes_on_disk: calc_bytes_on_disk(fname)?,
             fname: fname.to_owned(),
-            file: BufWriter::new(get_file_handle(fname, resume)?),
+            file: BufWriter::new(get_file_handle(fname, resume, !concurrent)?),
             st_file,
             server_supports_resume: false,
             quiet_mode,

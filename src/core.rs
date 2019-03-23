@@ -179,12 +179,12 @@ impl HttpDownload {
             None => false,
         };
         if server_supports_bytes && self.opts.headers.clone().get(RANGE).is_some() {
-                if self.opts.concurrent {
-                    self.opts.headers.remove(RANGE);
-                }
-                for hook in &self.hooks {
-                    hook.borrow_mut().on_server_supports_resume();
-                }
+            if self.opts.concurrent {
+                self.opts.headers.remove(RANGE);
+            }
+            for hook in &self.hooks {
+                hook.borrow_mut().on_server_supports_resume();
+            }
         }
 
         req = req.headers(self.opts.headers.clone());
@@ -241,15 +241,13 @@ impl HttpDownload {
         } else {
             bail!("concurrent download: server did not return content-length header")
         };
-        let n_workers = self.opts.num_workers;
         let chunk_offsets = self
             .opts
             .chunk_offsets
             .clone()
             .unwrap_or_else(|| self.get_chunk_offsets(ct_len, self.opts.chunk_size));
-        let worker_pool = ThreadPool::new(n_workers);
+        let worker_pool = ThreadPool::new(self.opts.num_workers);
         for offsets in chunk_offsets {
-            debug_assert!(offsets.0 < offsets.1);
             let data_tx = data_tx.clone();
             let errors_tx = errors_tx.clone();
             let url = self.url.clone();
