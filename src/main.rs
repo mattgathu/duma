@@ -30,7 +30,7 @@ fn run() -> Fallible<()> {
     (@arg NUM_CONNECTIONS: -n --num_connections +takes_value "maximum number of concurrent connections (default is 8)")
     (@arg URL: +required +takes_value "url to download")
     )
-    .get_matches_safe()?;
+    .get_matches_safe().unwrap_or_else(|e| e.exit());
 
     let url = utils::parse_url(
         args.value_of("URL")
