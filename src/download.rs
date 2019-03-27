@@ -9,27 +9,29 @@ use clap::ArgMatches;
 use console::style;
 use failure::{format_err, Fallible};
 use indicatif::{HumanBytes, ProgressBar};
-use reqwest::header::{HeaderMap, CONTENT_LENGTH, CONTENT_TYPE, RANGE, USER_AGENT};
-use reqwest::{Client, StatusCode, Url};
+use minreq;
+use url::{Url};
+
+type Headers = HashMap<String, String>;
 
 use crate::bar::create_progress_bar;
 use crate::core::{Config, EventsHandler, FtpDownload, HttpDownload};
 use crate::utils::get_file_handle;
 
-fn request_headers_from_server(url: &Url) -> Fallible<HeaderMap> {
-    let client = Client::new();
-    let head_resp = client.head(url.clone()).send()?;
+fn request_headers_from_server(url: &Url) -> Fallible<Headers> {
+    let url = url.as_str();
+    let head_resp = minreq::head(url)
+        .with_header("Accept", "*/*")
+        .with_header("User-Agent", "duma")
+        .with_timeout(30)
+        .send()?;
 
-    Ok(head_resp.headers().clone())
+    Ok(head_resp.headers)
 }
 
-fn print_headers(headers: HeaderMap) {
-    for hdr in headers.iter() {
-        println!(
-            "{}: {}",
-            style(hdr.0).red(),
-            style(hdr.1.to_str().unwrap_or("")).green()
-        );
+fn print_headers(headers: Headers) {
+    for (hdr, val) in headers.iter() {
+        println!("{}: {}", style(hdr).red(), style(val).green());
     }
 }
 
@@ -107,17 +109,17 @@ fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
     }
 }
 
-fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<HeaderMap> {
+fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<Headers> {
     let bytes_on_disk = calc_bytes_on_disk(fname)?;
-    let mut headers = HeaderMap::new();
+    let mut headers = Headers::new();
     if let Some(bcount) = bytes_on_disk {
         if resume {
             let byte_range = format!("bytes={}-", bcount);
-            headers.insert(RANGE, byte_range.parse()?);
+            headers.insert("Range".to_string(), byte_range.parse()?);
         }
     }
 
-    headers.insert(USER_AGENT, user_agent.parse()?);
+    headers.insert("User-Agent".to_string(), user_agent.parse()?);
 
     Ok(headers)
 }
@@ -161,8 +163,8 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         print_headers(headers);
         return Ok(());
     }
-    let ct_len = if let Some(val) = headers.get(CONTENT_LENGTH) {
-        val.to_str()?.parse::<u64>().unwrap_or(0)
+    let ct_len = if let Some(val) = headers.get("Content-Length") {
+        val.parse::<u64>().unwrap_or(0)
     } else {
         0u64
     };
@@ -280,22 +282,20 @@ impl DefaultEventsHandler {
 }
 
 impl EventsHandler for DefaultEventsHandler {
-    fn on_headers(&mut self, headers: HeaderMap) {
+    fn on_headers(&mut self, headers: Headers) {
         if self.quiet_mode {
             return;
         }
-        let ct_type = if let Some(val) = headers.get(CONTENT_TYPE) {
-            val.to_str().unwrap_or("")
+        let ct_type = if let Some(val) = headers.get("Content-Type") {
+            val
         } else {
             ""
         };
         println!("Type: {}", style(ct_type).green());
 
         println!("Saving to: {}", style(&self.fname).green());
-        if let Some(val) = headers.get(CONTENT_LENGTH) {
-            if let Ok(s) = val.to_str() {
-                self.create_prog_bar(s.parse::<u64>().ok());
-            }
+        if let Some(val) = headers.get("Content-Length") {
+                self.create_prog_bar(val.parse::<u64>().ok());
         } else {
             println!(
                 "{}",
@@ -367,11 +367,11 @@ impl EventsHandler for DefaultEventsHandler {
         ::std::process::exit(0);
     }
 
-    fn on_failure_status(&self, status: StatusCode) {
+    fn on_failure_status(&self, status: i32) {
         if self.quiet_mode {
             return;
         }
-        if status.as_u16() == 416 {
+        if status == 416 {
             println!(
                 "{}",
                 &style("\nThe file is already fully retrieved; nothing to do.\n").red()

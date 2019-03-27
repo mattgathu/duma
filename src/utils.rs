@@ -1,14 +1,14 @@
 use failure::{bail, Fallible};
-use reqwest::{Url, UrlError};
+use url::{Url, ParseError};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
 use std::path::Path;
 
-pub fn parse_url(url: &str) -> Result<Url, UrlError> {
+pub fn parse_url(url: &str) -> Result<Url, ParseError> {
     match Url::parse(url) {
         Ok(url) => Ok(url),
-        Err(error) if error == UrlError::RelativeUrlWithoutBase => {
+        Err(error) if error == ParseError::RelativeUrlWithoutBase => {
             let url_with_base = format!("{}{}", "http://", url);
             Url::parse(url_with_base.as_str())
         }
