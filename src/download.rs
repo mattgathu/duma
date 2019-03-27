@@ -3,14 +3,13 @@ use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::time::Duration;
 
 use clap::ArgMatches;
 use console::style;
 use failure::{format_err, Fallible};
 use indicatif::{HumanBytes, ProgressBar};
 use minreq;
-use url::{Url};
+use url::Url;
 
 type Headers = HashMap<String, String>;
 
@@ -18,12 +17,12 @@ use crate::bar::create_progress_bar;
 use crate::core::{Config, EventsHandler, FtpDownload, HttpDownload};
 use crate::utils::get_file_handle;
 
-fn request_headers_from_server(url: &Url) -> Fallible<Headers> {
+fn request_headers_from_server(url: &Url, timeout: u64, ua: &str) -> Fallible<Headers> {
     let url = url.as_str();
     let head_resp = minreq::head(url)
         .with_header("Accept", "*/*")
-        .with_header("User-Agent", "duma")
-        .with_timeout(30)
+        .with_header("User-Agent", ua)
+        .with_timeout(timeout)
         .send()?;
 
     Ok(head_resp.headers)
@@ -156,7 +155,18 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         .value_of("AGENT")
         .unwrap_or(&format!("Duma/{}", version))
         .to_owned();
-    let headers = request_headers_from_server(&url)?;
+    let fname = gen_filename(&url, args.value_of("FILE"));
+    let timeout = if let Some(secs) = args.value_of("SECONDS") {
+        secs.parse::<u64>()?
+    } else {
+        30u64
+    };
+    let num_workers = if let Some(num) = args.value_of("NUM_CONNECTIONS") {
+        num.parse::<usize>()?
+    } else {
+        8usize
+    };
+    let headers = request_headers_from_server(&url, timeout, &user_agent)?;
 
     // early exit if headers flag is present
     if args.is_present("headers") {
@@ -168,19 +178,9 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
     } else {
         0u64
     };
-
-    let fname = gen_filename(&url, args.value_of("FILE"));
+    
     let headers = prep_headers(&fname, resume_download, &user_agent)?;
-    let timeout = if let Some(secs) = args.value_of("SECONDS") {
-        Some(Duration::new(secs.parse::<u64>()?, 0))
-    } else {
-        None
-    };
-    let num_workers = if let Some(num) = args.value_of("NUM_CONNECTIONS") {
-        num.parse::<usize>()?
-    } else {
-        8usize
-    };
+
     let proxies = get_http_proxies();
     let state_file_exists = Path::new(&format!("{}.st", fname)).exists();
     let chunk_size = 512_000u64;
@@ -295,7 +295,7 @@ impl EventsHandler for DefaultEventsHandler {
 
         println!("Saving to: {}", style(&self.fname).green());
         if let Some(val) = headers.get("Content-Length") {
-                self.create_prog_bar(val.parse::<u64>().ok());
+            self.create_prog_bar(val.parse::<u64>().ok());
         } else {
             println!(
                 "{}",

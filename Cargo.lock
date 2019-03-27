@@ -334,7 +334,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "minreq"
 version = "1.1.1-alpha.0"
-source = "git+https://github.com/mattgathu/minreq/?branch=duma#8f7f49be96eeb17eac263986e85f8119260fe344"
+source = "git+https://github.com/mattgathu/minreq/?branch=duma"
 dependencies = [
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls 0.15.1 (registry+https://github.com/rust-lang/crates.io-index)",

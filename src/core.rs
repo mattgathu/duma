@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{Read};
+use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -21,7 +21,7 @@ pub struct Config {
     pub resume: bool,
     pub headers: Headers,
     pub file: String,
-    pub timeout: Option<Duration>,
+    pub timeout: u64,
     pub concurrent: bool,
     pub proxies: Option<HashMap<String, String>>,
     pub max_retries: i32,
@@ -145,7 +145,7 @@ impl FtpDownload {
 pub struct HttpDownload {
     url: Url,
     hooks: Vec<RefCell<Box<dyn EventsHandler>>>,
-    opts: Config,
+    conf: Config,
     retries: i32,
 }
 
@@ -156,52 +156,51 @@ impl fmt::Debug for HttpDownload {
 }
 
 impl HttpDownload {
-    pub fn new(url: Url, opts: Config) -> HttpDownload {
+    pub fn new(url: Url, conf: Config) -> HttpDownload {
         HttpDownload {
             url,
             hooks: Vec::new(),
-            opts,
+            conf,
             retries: 0,
         }
     }
 
     pub fn download(&mut self) -> Fallible<()> {
-        let headers = minreq::head(self.url.as_str())
-            .with_header("User-Agent", self.opts.user_agent.clone())
-            .with_timeout(30)
-            .send()?
-            .headers;
+        let head_resp = minreq::head(self.url.as_str())
+            .with_header("User-Agent", self.conf.user_agent.clone())
+            .with_timeout(self.conf.timeout)
+            .send()?;
+        let headers = head_resp.headers;
 
         let server_supports_bytes = match headers.get("Accept-Ranges") {
             Some(val) => val == "bytes",
             None => false,
         };
-        if server_supports_bytes && self.opts.headers.get("Range").is_some() {
-            if self.opts.concurrent {
-                self.opts.headers.remove("Range");
+        if server_supports_bytes && self.conf.headers.get("Range").is_some() {
+            if self.conf.concurrent {
+                self.conf.headers.remove("Range");
             }
             for hook in &self.hooks {
                 hook.borrow_mut().on_server_supports_resume();
             }
         }
 
-        let resp = minreq::get(self.url.as_str())
-            .with_headers(&self.opts.headers)
-            .with_timeout(30)
-            .send()?;
+        let req = minreq::get(self.url.as_str())
+            .with_headers(&self.conf.headers)
+            .with_timeout(self.conf.timeout);
 
-        if resp.status_code == 200 {
+        if head_resp.status_code == 200 {
             for hk in &self.hooks {
                 hk.borrow_mut().on_headers(headers.clone());
             }
-            if server_supports_bytes && self.opts.concurrent {
-                self.concurrent_download(&headers)?;
+            if server_supports_bytes && self.conf.concurrent {
+                self.concurrent_download(req, headers.get("Content-Length"))?;
             } else {
-                self.singlethread_download(resp)?;
+                self.singlethread_download(req)?;
             }
         } else {
             for hk in &self.hooks {
-                hk.borrow_mut().on_failure_status(resp.status_code);
+                hk.borrow_mut().on_failure_status(head_resp.status_code);
             }
         }
 
@@ -217,7 +216,8 @@ impl HttpDownload {
         self
     }
 
-    fn singlethread_download(&mut self, mut resp: minreq::Response) -> Fallible<()> {
+    fn singlethread_download(&mut self, req: minreq::Request) -> Fallible<()> {
+        let mut resp = req.send()?;
         let ct_len = if let Some(val) = resp.headers.get("Content-Length") {
             Some(val.parse::<usize>()?)
         } else {
@@ -225,7 +225,7 @@ impl HttpDownload {
         };
         let mut cnt = 0;
         loop {
-            let mut buffer = vec![0; self.opts.chunk_size as usize];
+            let mut buffer = vec![0; self.conf.chunk_size as usize];
             let bcount = resp.body.read(&mut buffer[..])?;
             cnt += bcount;
             buffer.truncate(bcount);
@@ -241,29 +241,32 @@ impl HttpDownload {
         Ok(())
     }
 
-    pub fn concurrent_download(&mut self, headers: &Headers) -> Fallible<()> {
+    pub fn concurrent_download(
+        &mut self,
+        req: minreq::Request,
+        ct_val: Option<&String>,
+    ) -> Fallible<()> {
         let (data_tx, data_rx) = mpsc::channel();
         let (errors_tx, errors_rx) = mpsc::channel();
-        let ct_len = if let Some(val) = headers.get("Content-Length") {
+        let ct_len = if let Some(val) = ct_val {
             val.parse::<u64>()?
         } else {
             bail!("concurrent download: server did not return content-length header")
         };
         let chunk_offsets = self
-            .opts
+            .conf
             .chunk_offsets
             .clone()
-            .unwrap_or_else(|| self.get_chunk_offsets(ct_len, self.opts.chunk_size));
-        let worker_pool = ThreadPool::new(self.opts.num_workers);
+            .unwrap_or_else(|| self.get_chunk_offsets(ct_len, self.conf.chunk_size));
+        let worker_pool = ThreadPool::new(self.conf.num_workers);
         for offsets in chunk_offsets {
             let data_tx = data_tx.clone();
             let errors_tx = errors_tx.clone();
-            let url = self.url.clone();
-            worker_pool
-                .execute(move || download_chunk(url, offsets, data_tx.clone(), errors_tx))
+            let req = req.clone();
+            worker_pool.execute(move || download_chunk(req, offsets, data_tx.clone(), errors_tx))
         }
 
-        let mut count = self.opts.bytes_on_disk.unwrap_or(0);
+        let mut count = self.conf.bytes_on_disk.unwrap_or(0);
         loop {
             if count == ct_len {
                 break;
@@ -277,7 +280,7 @@ impl HttpDownload {
             match errors_rx.recv_timeout(Duration::from_micros(1)) {
                 Err(_) => {}
                 Ok(offsets) => {
-                    if self.retries > self.opts.max_retries {
+                    if self.retries > self.conf.max_retries {
                         for hk in &self.hooks {
                             hk.borrow_mut().on_max_retries();
                         }
@@ -285,9 +288,8 @@ impl HttpDownload {
                     self.retries += 1;
                     let data_tx = data_tx.clone();
                     let errors_tx = errors_tx.clone();
-                    let url = self.url.clone();
-                    worker_pool
-                        .execute(move || download_chunk(url, offsets, data_tx, errors_tx))
+                    let req = req.clone();
+                    worker_pool.execute(move || download_chunk(req, offsets, data_tx, errors_tx))
                 }
             }
         }
@@ -323,24 +325,22 @@ impl HttpDownload {
 }
 
 fn download_chunk(
-    url: Url,
+    req: minreq::Request,
     offsets: (u64, u64),
     sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
     errors: mpsc::Sender<(u64, u64)>,
 ) {
     fn inner(
-        url: Url,
+        req: minreq::Request,
         offsets: (u64, u64),
         sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
         start_offset: &mut u64,
     ) -> Fallible<()> {
         let byte_range = format!("bytes={}-{}", offsets.0, offsets.1);
-        let mut resp = minreq::get(url.as_str())
+        let mut resp = req
             .with_header("Range", byte_range)
             .with_header("Accept", "*/*")
             .with_header("Connection", "keep-alive")
-            .with_header("User-Agent", "Duma/0.1.0")
-            .with_timeout(30)
             .send()?;
         let chunk_sz = offsets.1 - offsets.0;
         let mut cnt = 0u64;
@@ -355,7 +355,7 @@ fn download_chunk(
             } else {
                 break;
             }
-            if cnt == (chunk_sz+1) {
+            if cnt == (chunk_sz + 1) {
                 break;
             }
         }
@@ -364,7 +364,7 @@ fn download_chunk(
     }
     let mut start_offset = offsets.0;
     let end_offset = offsets.1;
-    match inner(url, offsets, sender, &mut start_offset) {
+    match inner(req, offsets, sender, &mut start_offset) {
         Ok(_) => {}
         Err(_) => match errors.send((start_offset, end_offset)) {
             _ => {}
