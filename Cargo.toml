@@ -11,8 +11,11 @@ clap = "2.31.2"
 ftp = "3.0.1"
 threadpool = "1.7.1"
 failure = { version = "0.1.5", features = [] }
-minreq = {git = "https://github.com/mattgathu/minreq/", branch = "duma", features = ["https"]}
+minreq = {git = "https://github.com/mattgathu/minreq/", branch = "duma"}
 url = "1.7.2"
 
 [dev-dependencies]
 assert_cmd = "0.11"
+tiny_http = "0.6.2"
+assert_fs = "0.11"
+predicates = "1.0"
