@@ -2,16 +2,28 @@
 name = "duma"
 version = "0.1.0"
 authors = ["Matt Gathu <mattgathu@gmail.com>"]
+description = "A minimal file downloader"
+documentation = "https://github.com/mattgathu/duma"
+homepage = "https://github.com/mattgathu/duma"
+repository = "https://github.com/mattgathu/duma"
+readme = "README.md"
+keywords = ["http", "client", "cli", "file", "download"]
+categories = ["web-programming::http-client", "command-line-utilities", "network-programming"]
+license = "MIT"
 edition = "2018"
 
 [dependencies]
-reqwest = "0.9.11"
 indicatif = "0.11.0"
 console = "0.7.5"
 clap = "2.31.2"
 ftp = "3.0.1"
 threadpool = "1.7.1"
-failure = "0.1.2"
+failure = { version = "0.1.5", features = [] }
+minreq = {git = "https://github.com/mattgathu/minreq/", branch = "duma"}
+url = "1.7.2"
 
 [dev-dependencies]
 assert_cmd = "0.11"
+tiny_http = "0.6.2"
+assert_fs = "0.11"
+predicates = "1.0"
