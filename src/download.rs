@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -142,22 +141,6 @@ fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<Headers
     Ok(headers)
 }
 
-fn get_http_proxies() -> Option<HashMap<String, String>> {
-    let mut proxies = HashMap::new();
-    if let Ok(proxy) = env::var("http_proxy") {
-        proxies.insert("http_proxy".to_owned(), proxy);
-    };
-    if let Ok(proxy) = env::var("https_proxy") {
-        proxies.insert("https_proxy".to_owned(), proxy);
-    };
-
-    if !proxies.is_empty() {
-        Some(proxies)
-    } else {
-        None
-    }
-}
-
 pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Fallible<()> {
     let fname = gen_filename(&url, filename, None);
 
@@ -200,7 +183,6 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
 
     let headers = prep_headers(&fname, resume_download, &user_agent)?;
 
-    let proxies = get_http_proxies();
     let state_file_exists = Path::new(&format!("{}.st", fname)).exists();
     let chunk_size = 512_000u64;
 
@@ -224,7 +206,6 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         file: fname.clone(),
         timeout,
         concurrent: concurrent_download,
-        proxies,
         max_retries: 100,
         num_workers,
         bytes_on_disk,

@@ -23,7 +23,6 @@ pub struct Config {
     pub file: String,
     pub timeout: u64,
     pub concurrent: bool,
-    pub proxies: Option<HashMap<String, String>>,
     pub max_retries: i32,
     pub num_workers: usize,
     pub bytes_on_disk: Option<u64>,
@@ -200,7 +199,8 @@ impl HttpDownload {
             }
         } else {
             for hk in &self.hooks {
-                hk.borrow_mut().on_failure_status(i32::from(&head_resp.status));
+                hk.borrow_mut()
+                    .on_failure_status(i32::from(&head_resp.status));
             }
         }
 
