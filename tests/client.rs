@@ -28,6 +28,7 @@ fn test_request_timeout() {
 }
 
 #[test]
+#[cfg(all(unix))]
 fn test_headers() {
     setup();
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
@@ -42,6 +43,7 @@ fn test_headers() {
 }
 
 #[test]
+#[cfg(all(unix))]
 fn test_file() {
     setup();
     let temp = assert_fs::TempDir::new().unwrap().persist_if(true);
