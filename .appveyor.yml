@@ -12,9 +12,5 @@ environment:
   matrix:
     - TOOLCHAIN_VERSION: 14.0
       RUST: stable
-    - TOOLCHAIN_VERSION: 14.0
-      RUST: beta
-    - TOOLCHAIN_VERSION: 14.0
-      RUST: nightly
 
 build_script: .appveyor.bat
