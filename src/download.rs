@@ -7,7 +7,7 @@ use clap::ArgMatches;
 use console::style;
 use failure::{format_err, Fallible};
 use indicatif::{HumanBytes, ProgressBar};
-use minreq;
+use mrq;
 use url::Url;
 
 type Headers = HashMap<String, String>;
@@ -18,7 +18,7 @@ use crate::utils::{decode_percent_encoded_data, get_file_handle};
 
 fn request_headers_from_server(url: &Url, timeout: u64, ua: &str) -> Fallible<Headers> {
     let url = url.as_str();
-    let head_resp = minreq::head(url)
+    let head_resp = mrq::head(url)
         .with_header("Accept", "*/*")
         .with_header("User-Agent", ua)
         .with_timeout(timeout)
