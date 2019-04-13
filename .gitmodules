@@ -1,0 +1,4 @@
+[submodule "minreq"]
+	path = minreq
+	url = git@github.com:mattgathu/minreq.git
+    branch = duma

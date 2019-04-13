@@ -19,7 +19,7 @@ clap = "2.31.2"
 ftp = "3.0.1"
 threadpool = "1.7.1"
 failure = { version = "0.1.5", features = [] }
-minreq = {git = "https://github.com/mattgathu/minreq/", branch = "duma"}
+minreq = {path = "minreq"}
 url = "1.7.2"
 
 [dev-dependencies]
