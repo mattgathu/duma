@@ -15,7 +15,7 @@ type Headers = HashMap<String, String>;
 
 use crate::bar::create_progress_bar;
 use crate::core::{Config, EventsHandler, FtpDownload, HttpDownload};
-use crate::utils::get_file_handle;
+use crate::utils::{decode_percent_encoded_data, get_file_handle};
 
 fn request_headers_from_server(url: &Url, timeout: u64, ua: &str) -> Fallible<Headers> {
     let url = url.as_str();
@@ -71,13 +71,32 @@ fn get_resume_chunk_offsets(
     Ok(chunks)
 }
 
-fn gen_filename(url: &Url, fname: Option<&str>) -> String {
+fn gen_filename(url: &Url, fname: Option<&str>, headers: Option<&Headers>) -> String {
+    if let Some(hdrs) = headers {
+        if let Some(val) = hdrs.get("Content-Disposition") {
+            if val.contains("filename=") {
+                let x = val
+                    .rsplit(';')
+                    .nth(0)
+                    .unwrap_or("")
+                    .rsplit('=')
+                    .nth(0)
+                    .unwrap_or("");
+                if !x.is_empty() {
+                    return x.to_string();
+                }
+            }
+        }
+    }
     match fname {
         Some(name) => name.to_owned(),
         None => {
             let name = &url.path().split('/').last().unwrap_or("");
             if !name.is_empty() {
-                name.to_string()
+                match decode_percent_encoded_data(name) {
+                    Ok(val) => val,
+                    _ => name.to_string(),
+                }
             } else {
                 "index.html".to_owned()
             }
@@ -140,7 +159,7 @@ fn get_http_proxies() -> Option<HashMap<String, String>> {
 }
 
 pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Fallible<()> {
-    let fname = gen_filename(&url, filename);
+    let fname = gen_filename(&url, filename, None);
 
     let mut client = FtpDownload::new(url.clone());
     let events_handler = DefaultEventsHandler::new(&fname, false, false, quiet_mode)?;
@@ -155,7 +174,6 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         .value_of("AGENT")
         .unwrap_or(&format!("Duma/{}", version))
         .to_owned();
-    let fname = gen_filename(&url, args.value_of("FILE"));
     let timeout = if let Some(secs) = args.value_of("SECONDS") {
         secs.parse::<u64>()?
     } else {
@@ -167,6 +185,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         8usize
     };
     let headers = request_headers_from_server(&url, timeout, &user_agent)?;
+    let fname = gen_filename(&url, args.value_of("FILE"), Some(&headers));
 
     // early exit if headers flag is present
     if args.is_present("headers") {
@@ -178,7 +197,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
     } else {
         0u64
     };
-    
+
     let headers = prep_headers(&fname, resume_download, &user_agent)?;
 
     let proxies = get_http_proxies();

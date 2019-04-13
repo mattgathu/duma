@@ -189,7 +189,7 @@ impl HttpDownload {
             .with_headers(&self.conf.headers)
             .with_timeout(self.conf.timeout);
 
-        if head_resp.status_code == 200 {
+        if head_resp.status.is_success() {
             for hk in &self.hooks {
                 hk.borrow_mut().on_headers(headers.clone());
             }
@@ -200,7 +200,7 @@ impl HttpDownload {
             }
         } else {
             for hk in &self.hooks {
-                hk.borrow_mut().on_failure_status(head_resp.status_code);
+                hk.borrow_mut().on_failure_status(i32::from(&head_resp.status));
             }
         }
 
