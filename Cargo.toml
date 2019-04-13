@@ -19,7 +19,7 @@ clap = "2.31.2"
 ftp = "3.0.1"
 threadpool = "1.7.1"
 failure = { version = "0.1.5", features = [] }
-minreq = {path = "minreq", version = "1.1.1-alpha.0"}
+mrq = "0.1.0"
 url = "1.7.2"
 
 [dev-dependencies]

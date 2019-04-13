@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use failure::{bail, format_err, Fallible};
-use minreq;
+use mrq;
 use url::Url;
 
 use threadpool::ThreadPool;
@@ -165,7 +165,7 @@ impl HttpDownload {
     }
 
     pub fn download(&mut self) -> Fallible<()> {
-        let head_resp = minreq::head(self.url.as_str())
+        let head_resp = mrq::head(self.url.as_str())
             .with_header("User-Agent", self.conf.user_agent.clone())
             .with_timeout(self.conf.timeout)
             .send()?;
@@ -184,7 +184,7 @@ impl HttpDownload {
             }
         }
 
-        let req = minreq::get(self.url.as_str())
+        let req = mrq::get(self.url.as_str())
             .with_headers(&self.conf.headers)
             .with_timeout(self.conf.timeout);
 
@@ -216,7 +216,7 @@ impl HttpDownload {
         self
     }
 
-    fn singlethread_download(&mut self, req: minreq::Request) -> Fallible<()> {
+    fn singlethread_download(&mut self, req: mrq::Request) -> Fallible<()> {
         let mut resp = req.send()?;
         let ct_len = if let Some(val) = resp.headers.get("Content-Length") {
             Some(val.parse::<usize>()?)
@@ -243,7 +243,7 @@ impl HttpDownload {
 
     pub fn concurrent_download(
         &mut self,
-        req: minreq::Request,
+        req: mrq::Request,
         ct_val: Option<&String>,
     ) -> Fallible<()> {
         let (data_tx, data_rx) = mpsc::channel();
@@ -325,13 +325,13 @@ impl HttpDownload {
 }
 
 fn download_chunk(
-    req: minreq::Request,
+    req: mrq::Request,
     offsets: (u64, u64),
     sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
     errors: mpsc::Sender<(u64, u64)>,
 ) {
     fn inner(
-        req: minreq::Request,
+        req: mrq::Request,
         offsets: (u64, u64),
         sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
         start_offset: &mut u64,
