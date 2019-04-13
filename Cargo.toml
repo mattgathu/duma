@@ -2,6 +2,14 @@
 name = "duma"
 version = "0.1.0"
 authors = ["Matt Gathu <mattgathu@gmail.com>"]
+description = "A minimal file downloader"
+documentation = "https://github.com/mattgathu/duma"
+homepage = "https://github.com/mattgathu/duma"
+repository = "https://github.com/mattgathu/duma"
+readme = "README.md"
+keywords = ["http", "client", "cli", "file", "download"]
+categories = ["web-programming::http-client", "command-line-utilities", "network-programming"]
+license = "MIT"
 edition = "2018"
 
 [dependencies]

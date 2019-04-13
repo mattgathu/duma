@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.org/mattgathu/duma.svg?branch=master)](https://travis-ci.org/mattgathu/duma)
 [![Build status](https://ci.appveyor.com/api/projects/status/007cmm9c6c9onai9?svg=true)](https://ci.appveyor.com/project/mattgathu/duma)
 
-A wget clone written in Rust.
+A minimal file downloader written in Rust.
 
 ## features
 
@@ -17,7 +17,7 @@ A wget clone written in Rust.
 ```
 Duma 0.1.0
 Matt Gathu <mattgathu@gmail.com>
-wget clone written in Rust
+A minimal file downloader
 
 USAGE:
     duma [FLAGS] [OPTIONS] <URL>
@@ -34,6 +34,14 @@ OPTIONS:
 ARGS:
     <URL>    url to download
 
+```
+
+## Installation
+
+Via cargo
+
+```
+Cargo install duma
 ```
 
 ## screenshot

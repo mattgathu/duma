@@ -19,7 +19,7 @@ fn run() -> Fallible<()> {
     let args = clap_app!(Duma =>
     (version: crate_version!())
     (author: "Matt Gathu <mattgathu@gmail.com>")
-    (about: "wget clone written in Rust")
+    (about: "A minimal file downloader")
     (@arg quiet: -q --quiet "quiet (no output)")
     (@arg continue: -c --continue "resume getting a partially-downloaded file")
     (@arg singlethread: -s --singlethread "download using only a single thread")

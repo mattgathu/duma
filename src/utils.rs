@@ -59,7 +59,6 @@ pub fn decode_percent_encoded_data(data: &str) -> Fallible<String> {
     Ok(String::from_utf8(unescaped_bytes)?)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
