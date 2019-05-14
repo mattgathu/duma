@@ -46,7 +46,7 @@ ARGS:
 Via cargo
 
 ```
-Cargo install duma
+cargo install duma
 ```
 
 ## screenshot
