@@ -71,35 +71,47 @@ fn get_resume_chunk_offsets(
 }
 
 fn gen_filename(url: &Url, fname: Option<&str>, headers: Option<&Headers>) -> String {
-    if let Some(hdrs) = headers {
-        if let Some(val) = hdrs.get("Content-Disposition") {
+    let content_disposition = headers
+        .and_then(|hdrs| hdrs.get("Content-Disposition"))
+        .and_then(|val| {
             if val.contains("filename=") {
-                let x = val
-                    .rsplit(';')
-                    .nth(0)
-                    .unwrap_or("")
-                    .rsplit('=')
-                    .nth(0)
-                    .unwrap_or("");
-                if !x.is_empty() {
-                    return x.to_string();
-                }
+                Some(val)
+            } else {
+                None
             }
-        }
-    }
+        })
+        .and_then(|val| {
+            let x = val
+                .rsplit(';')
+                .nth(0)
+                .unwrap_or("")
+                .rsplit('=')
+                .nth(0)
+                .unwrap_or("")
+                .trim_start_matches('"')
+                .trim_end_matches('"');
+            if !x.is_empty() {
+                Some(x.to_string())
+            } else {
+                None
+            }
+        });
     match fname {
         Some(name) => name.to_owned(),
-        None => {
-            let name = &url.path().split('/').last().unwrap_or("");
-            if !name.is_empty() {
-                match decode_percent_encoded_data(name) {
-                    Ok(val) => val,
-                    _ => name.to_string(),
+        None => match content_disposition {
+            Some(val) => val,
+            None => {
+                let name = &url.path().split('/').last().unwrap_or("");
+                if !name.is_empty() {
+                    match decode_percent_encoded_data(name) {
+                        Ok(val) => val,
+                        _ => name.to_string(),
+                    }
+                } else {
+                    "index.html".to_owned()
                 }
-            } else {
-                "index.html".to_owned()
             }
-        }
+        },
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "duma"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Matt Gathu <mattgathu@gmail.com>"]
 description = "A minimal file downloader"
 documentation = "https://github.com/mattgathu/duma"

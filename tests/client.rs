@@ -47,10 +47,22 @@ fn test_headers() {
 fn test_file() {
     setup();
     let temp = assert_fs::TempDir::new().unwrap().persist_if(true);
-    println!("{}", temp.path().display());
     let input_file = temp.child("foo.txt");
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
     cmd.args(&["-s", "-O", "foo.txt", "http://0.0.0.0:35550/file"])
+        .current_dir(temp.path())
+        .assert();
+    input_file.assert(predicate::path::is_file());
+}
+
+#[test]
+#[cfg(all(unix))]
+fn test_content_disposition() {
+    setup();
+    let temp = assert_fs::TempDir::new().unwrap().persist_if(true);
+    let input_file = temp.child("renamed.txt");
+    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    cmd.args(&["-s", "http://0.0.0.0:35550/content-disposition"])
         .current_dir(temp.path())
         .assert();
     input_file.assert(predicate::path::is_file());
