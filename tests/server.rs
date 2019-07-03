@@ -28,6 +28,7 @@ fn handle_req(req: Request) -> Result<(), Error> {
         "/headers" => respond_with_headers(req),
         "/timeout" => respond_with_timeout(req),
         "/file" => respond_with_file(req),
+        "/content-disposition" => respond_with_content_disposition(req),
         _ => respond_with_headers(req),
     }
 }
@@ -58,6 +59,27 @@ fn respond_with_file(req: Request) -> Result<(), Error> {
     req.respond(
         Response::from_file(f)
             .with_header(ctype)
+            .with_header(clength),
+    )
+}
+
+fn respond_with_content_disposition(req: Request) -> Result<(), Error> {
+    let mut path = std::env::current_dir()?;
+    path.push("tests");
+    path.push("foo.txt");
+    let f = File::open(path)?;
+    let len = f.metadata()?.len();
+    let ctype = "Content-Type: text/plain".parse::<Header>().unwrap();
+    let cdisp = "Content-Disposition: attachment; filename=\"renamed.txt\""
+        .parse::<Header>()
+        .unwrap();
+    let clength = format!("Content-Length: {}", len)
+        .parse::<Header>()
+        .unwrap();
+    req.respond(
+        Response::from_file(f)
+            .with_header(ctype)
+            .with_header(cdisp)
             .with_header(clength),
     )
 }
