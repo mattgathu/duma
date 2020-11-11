@@ -287,7 +287,7 @@ checksum = "134951f4028bdadb9b84baf4232681efbf277da25144b9b0ad65df75946c422b"
 
 [[package]]
 name = "duma"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "assert_fs",
