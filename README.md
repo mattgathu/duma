@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.org/mattgathu/duma.svg?branch=master)](https://travis-ci.org/mattgathu/duma)
 [![Build status](https://ci.appveyor.com/api/projects/status/007cmm9c6c9onai9?svg=true)](https://ci.appveyor.com/project/mattgathu/duma)
+[![Build status](https://github.com/mattgathu/duma/workflows/CI/badge.svg?branch=master)](https://github.com/mattgathu/duma/actions)
 
 A minimal file downloader written in Rust.
 
