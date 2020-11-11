@@ -181,9 +181,10 @@ impl HttpDownload {
             Some(val) => val == "bytes",
             None => false,
         };
-        if server_supports_bytes && self.conf.headers.get("Range").is_some() {
+
+        if server_supports_bytes && self.conf.headers.contains_key(header::RANGE) {
             if self.conf.concurrent {
-                self.conf.headers.remove("Range");
+                self.conf.headers.remove(header::RANGE);
             }
             for hook in &self.hooks {
                 hook.borrow_mut().on_server_supports_resume();
@@ -223,7 +224,7 @@ impl HttpDownload {
 
     fn singlethread_download(&mut self, req: Request) -> Fallible<()> {
         let mut resp = self.client.execute(req)?;
-        let ct_len = if let Some(val) = resp.headers().get("Content-Length") {
+        let ct_len = if let Some(val) = resp.headers().get(header::CONTENT_LENGTH) {
             Some(val.to_str()?.parse::<usize>()?)
         } else {
             None
