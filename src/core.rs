@@ -1,25 +1,23 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt;
 use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use failure::{bail, format_err, Fallible};
-use mrq;
+use failure::{format_err, Fallible};
+use reqwest::blocking::{Client, Request};
+use reqwest::header::{self, HeaderMap, HeaderValue};
 use url::Url;
 
 use threadpool::ThreadPool;
 
 use ftp::FtpStream;
 
-type Headers = HashMap<String, String>;
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub user_agent: String,
     pub resume: bool,
-    pub headers: Headers,
+    pub headers: HeaderMap,
     pub file: String,
     pub timeout: u64,
     pub concurrent: bool,
@@ -34,7 +32,7 @@ pub struct Config {
 pub trait EventsHandler {
     fn on_resume_download(&mut self, bytes_on_disk: u64) {}
 
-    fn on_headers(&mut self, headers: Headers) {}
+    fn on_headers(&mut self, headers: HeaderMap) {}
 
     fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
         Ok(())
@@ -146,6 +144,7 @@ pub struct HttpDownload {
     hooks: Vec<RefCell<Box<dyn EventsHandler>>>,
     conf: Config,
     retries: i32,
+    client: Client,
 }
 
 impl fmt::Debug for HttpDownload {
@@ -161,47 +160,54 @@ impl HttpDownload {
             hooks: Vec::new(),
             conf,
             retries: 0,
+            client: Client::new(),
         }
     }
 
     pub fn download(&mut self) -> Fallible<()> {
-        let head_resp = mrq::head(self.url.as_str())
-            .with_header("User-Agent", self.conf.user_agent.clone())
-            .with_timeout(self.conf.timeout)
+        let resp = self
+            .client
+            .get(self.url.as_ref())
+            .timeout(Duration::from_secs(self.conf.timeout))
+            .headers(self.conf.headers.clone())
+            .header(
+                header::USER_AGENT,
+                HeaderValue::from_str(&self.conf.user_agent)?,
+            )
             .send()?;
-        let headers = head_resp.headers;
+        let headers = resp.headers();
 
-        let server_supports_bytes = match headers.get("Accept-Ranges") {
+        let server_supports_bytes = match headers.get(header::ACCEPT_RANGES) {
             Some(val) => val == "bytes",
             None => false,
         };
-        if server_supports_bytes && self.conf.headers.get("Range").is_some() {
+
+        if server_supports_bytes && self.conf.headers.contains_key(header::RANGE) {
             if self.conf.concurrent {
-                self.conf.headers.remove("Range");
+                self.conf.headers.remove(header::RANGE);
             }
             for hook in &self.hooks {
                 hook.borrow_mut().on_server_supports_resume();
             }
         }
 
-        let req = mrq::get(self.url.as_str())
-            .with_headers(&self.conf.headers)
-            .with_timeout(self.conf.timeout);
+        let req = self
+            .client
+            .get(self.url.as_ref())
+            .timeout(Duration::from_secs(self.conf.timeout))
+            .headers(self.conf.headers.clone())
+            .build()?;
 
-        if head_resp.status.is_success() {
-            for hk in &self.hooks {
-                hk.borrow_mut().on_headers(headers.clone());
-            }
-            if server_supports_bytes && self.conf.concurrent {
-                self.concurrent_download(req, headers.get("Content-Length"))?;
-            } else {
-                self.singlethread_download(req)?;
-            }
+        for hk in &self.hooks {
+            hk.borrow_mut().on_headers(headers.clone());
+        }
+        if server_supports_bytes
+            && self.conf.concurrent
+            && headers.contains_key(header::CONTENT_LENGTH)
+        {
+            self.concurrent_download(req, headers.get(header::CONTENT_LENGTH).unwrap())?;
         } else {
-            for hk in &self.hooks {
-                hk.borrow_mut()
-                    .on_failure_status(i32::from(&head_resp.status));
-            }
+            self.singlethread_download(req)?;
         }
 
         for hook in &self.hooks {
@@ -216,17 +222,17 @@ impl HttpDownload {
         self
     }
 
-    fn singlethread_download(&mut self, req: mrq::Request) -> Fallible<()> {
-        let mut resp = req.send()?;
-        let ct_len = if let Some(val) = resp.headers.get("Content-Length") {
-            Some(val.parse::<usize>()?)
+    fn singlethread_download(&mut self, req: Request) -> Fallible<()> {
+        let mut resp = self.client.execute(req)?;
+        let ct_len = if let Some(val) = resp.headers().get(header::CONTENT_LENGTH) {
+            Some(val.to_str()?.parse::<usize>()?)
         } else {
             None
         };
         let mut cnt = 0;
         loop {
             let mut buffer = vec![0; self.conf.chunk_size as usize];
-            let bcount = resp.body.read(&mut buffer[..])?;
+            let bcount = resp.read(&mut buffer[..])?;
             cnt += bcount;
             buffer.truncate(bcount);
             if !buffer.is_empty() {
@@ -241,18 +247,10 @@ impl HttpDownload {
         Ok(())
     }
 
-    pub fn concurrent_download(
-        &mut self,
-        req: mrq::Request,
-        ct_val: Option<&String>,
-    ) -> Fallible<()> {
+    pub fn concurrent_download(&mut self, req: Request, ct_val: &HeaderValue) -> Fallible<()> {
         let (data_tx, data_rx) = mpsc::channel();
         let (errors_tx, errors_rx) = mpsc::channel();
-        let ct_len = if let Some(val) = ct_val {
-            val.parse::<u64>()?
-        } else {
-            bail!("concurrent download: server did not return content-length header")
-        };
+        let ct_len = ct_val.to_str()?.parse::<u64>()?;
         let chunk_offsets = self
             .conf
             .chunk_offsets
@@ -262,7 +260,7 @@ impl HttpDownload {
         for offsets in chunk_offsets {
             let data_tx = data_tx.clone();
             let errors_tx = errors_tx.clone();
-            let req = req.clone();
+            let req = req.try_clone().unwrap();
             worker_pool.execute(move || download_chunk(req, offsets, data_tx.clone(), errors_tx))
         }
 
@@ -288,7 +286,7 @@ impl HttpDownload {
                     self.retries += 1;
                     let data_tx = data_tx.clone();
                     let errors_tx = errors_tx.clone();
-                    let req = req.clone();
+                    let req = req.try_clone().unwrap();
                     worker_pool.execute(move || download_chunk(req, offsets, data_tx, errors_tx))
                 }
             }
@@ -325,28 +323,28 @@ impl HttpDownload {
 }
 
 fn download_chunk(
-    req: mrq::Request,
+    req: Request,
     offsets: (u64, u64),
     sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
     errors: mpsc::Sender<(u64, u64)>,
 ) {
     fn inner(
-        req: mrq::Request,
+        mut req: Request,
         offsets: (u64, u64),
         sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
         start_offset: &mut u64,
     ) -> Fallible<()> {
         let byte_range = format!("bytes={}-{}", offsets.0, offsets.1);
-        let mut resp = req
-            .with_header("Range", byte_range)
-            .with_header("Accept", "*/*")
-            .with_header("Connection", "keep-alive")
-            .send()?;
+        let headers = req.headers_mut();
+        headers.insert(header::RANGE, HeaderValue::from_str(&byte_range)?);
+        headers.insert(header::ACCEPT, HeaderValue::from_str("*/*")?);
+        headers.insert(header::CONNECTION, HeaderValue::from_str("keep-alive")?);
+        let mut resp = Client::new().execute(req)?;
         let chunk_sz = offsets.1 - offsets.0;
         let mut cnt = 0u64;
         loop {
             let mut buf = vec![0; chunk_sz as usize];
-            let byte_count = resp.body.read(&mut buf[..])?;
+            let byte_count = resp.read(&mut buf[..])?;
             cnt += byte_count as u64;
             buf.truncate(byte_count);
             if !buf.is_empty() {

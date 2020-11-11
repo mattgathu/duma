@@ -37,9 +37,9 @@ fn test_headers() {
         .output()
         .expect("failed to get command ouput");
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("Server: tiny-http (Rust)"));
-    assert!(stdout.contains("Content-Type: text/plain"));
-    assert!(stdout.contains("Content-Length: 0"));
+    assert!(stdout.contains("server: tiny-http (Rust)"));
+    assert!(stdout.contains("content-type: text/plain"));
+    assert!(stdout.contains("content-length: 0"));
 }
 
 #[test]
