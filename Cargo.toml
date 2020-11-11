@@ -19,8 +19,8 @@ clap = "2.31.2"
 ftp = "3.0.1"
 threadpool = "1.7.1"
 failure = { version = "0.1.5", features = [] }
-mrq = "0.1.0"
 url = "1.7.2"
+reqwest = {version = "0.10.8", features = ["blocking"]}
 
 [dev-dependencies]
 assert_cmd = "0.11"

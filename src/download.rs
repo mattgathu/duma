@@ -1,35 +1,38 @@
-use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
+use std::time::Duration;
 
 use clap::ArgMatches;
 use console::style;
 use failure::{format_err, Fallible};
 use indicatif::{HumanBytes, ProgressBar};
-use mrq;
-use url::Url;
+use reqwest::blocking::Client;
+use reqwest::header::{self, HeaderMap, HeaderValue};
 
-type Headers = HashMap<String, String>;
+use url::Url;
 
 use crate::bar::create_progress_bar;
 use crate::core::{Config, EventsHandler, FtpDownload, HttpDownload};
 use crate::utils::{decode_percent_encoded_data, get_file_handle};
 
-fn request_headers_from_server(url: &Url, timeout: u64, ua: &str) -> Fallible<Headers> {
-    let url = url.as_str();
-    let head_resp = mrq::head(url)
-        .with_header("Accept", "*/*")
-        .with_header("User-Agent", ua)
-        .with_timeout(timeout)
+fn request_headers_from_server(url: &Url, timeout: u64, ua: &str) -> Fallible<HeaderMap> {
+    let resp = Client::new()
+        .get(url.as_ref())
+        .timeout(Duration::from_secs(timeout))
+        .header(header::USER_AGENT, HeaderValue::from_str(ua)?)
+        .header(header::ACCEPT, HeaderValue::from_str("*/*")?)
         .send()?;
-
-    Ok(head_resp.headers)
+    Ok(resp.headers().clone())
 }
 
-fn print_headers(headers: Headers) {
+fn print_headers(headers: HeaderMap) {
     for (hdr, val) in headers.iter() {
-        println!("{}: {}", style(hdr).red(), style(val).green());
+        println!(
+            "{}: {}",
+            style(hdr.as_str()).red(),
+            style(val.to_str().unwrap_or("<..>")).green()
+        );
     }
 }
 
@@ -70,10 +73,11 @@ fn get_resume_chunk_offsets(
     Ok(chunks)
 }
 
-fn gen_filename(url: &Url, fname: Option<&str>, headers: Option<&Headers>) -> String {
+fn gen_filename(url: &Url, fname: Option<&str>, headers: Option<&HeaderMap>) -> String {
     let content_disposition = headers
-        .and_then(|hdrs| hdrs.get("Content-Disposition"))
+        .and_then(|hdrs| hdrs.get(header::CONTENT_DISPOSITION))
         .and_then(|val| {
+            let val = val.to_str().unwrap_or("");
             if val.contains("filename=") {
                 Some(val)
             } else {
@@ -138,17 +142,17 @@ fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
     }
 }
 
-fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<Headers> {
+fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<HeaderMap> {
     let bytes_on_disk = calc_bytes_on_disk(fname)?;
-    let mut headers = Headers::new();
+    let mut headers = HeaderMap::new();
     if let Some(bcount) = bytes_on_disk {
         if resume {
             let byte_range = format!("bytes={}-", bcount);
-            headers.insert("Range".to_string(), byte_range.parse()?);
+            headers.insert(header::RANGE, byte_range.parse()?);
         }
     }
 
-    headers.insert("User-Agent".to_string(), user_agent.parse()?);
+    headers.insert(header::USER_AGENT, user_agent.parse()?);
 
     Ok(headers)
 }
@@ -188,7 +192,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         return Ok(());
     }
     let ct_len = if let Some(val) = headers.get("Content-Length") {
-        val.parse::<u64>().unwrap_or(0)
+        val.to_str()?.parse::<u64>().unwrap_or(0)
     } else {
         0u64
     };
@@ -294,20 +298,20 @@ impl DefaultEventsHandler {
 }
 
 impl EventsHandler for DefaultEventsHandler {
-    fn on_headers(&mut self, headers: Headers) {
+    fn on_headers(&mut self, headers: HeaderMap) {
         if self.quiet_mode {
             return;
         }
-        let ct_type = if let Some(val) = headers.get("Content-Type") {
-            val
+        let ct_type = if let Some(val) = headers.get(header::CONTENT_TYPE) {
+            val.to_str().unwrap_or("")
         } else {
             ""
         };
         println!("Type: {}", style(ct_type).green());
 
         println!("Saving to: {}", style(&self.fname).green());
-        if let Some(val) = headers.get("Content-Length") {
-            self.create_prog_bar(val.parse::<u64>().ok());
+        if let Some(val) = headers.get(header::CONTENT_LENGTH) {
+            self.create_prog_bar(val.to_str().unwrap_or("").parse::<u64>().ok());
         } else {
             println!(
                 "{}",
