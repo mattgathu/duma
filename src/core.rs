@@ -364,8 +364,9 @@ fn download_chunk(
     let end_offset = offsets.1;
     match inner(req, offsets, sender, &mut start_offset) {
         Ok(_) => {}
-        Err(_) => match errors.send((start_offset, end_offset)) {
-            _ => {}
-        },
+        Err(_) => {
+            if errors.send((start_offset, end_offset)).is_ok(){};
+            {}
+        }
     }
 }

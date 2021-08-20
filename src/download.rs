@@ -56,12 +56,10 @@ fn get_resume_chunk_offsets(
 
     let mut i: u64 = 0;
     for (bc, offset) in downloaded {
-        if i == offset {
-            i = offset + bc;
-        } else {
+        if i != offset {
             chunks.push((i, offset - 1));
-            i = offset + bc;
         }
+        i = offset + bc;
     }
 
     while (ct_len - i) > chunk_size {
@@ -87,10 +85,10 @@ fn gen_filename(url: &Url, fname: Option<&str>, headers: Option<&HeaderMap>) -> 
         .and_then(|val| {
             let x = val
                 .rsplit(';')
-                .nth(0)
+                .next()
                 .unwrap_or("")
                 .rsplit('=')
-                .nth(0)
+                .next()
                 .unwrap_or("")
                 .trim_start_matches('"')
                 .trim_end_matches('"');
@@ -129,7 +127,7 @@ fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
         for line in buf.lines() {
             let num_of_bytes = line?
                 .split(':')
-                .nth(0)
+                .next()
                 .ok_or_else(|| format_err!("failed to split state file line"))?
                 .parse::<u64>()?;
             byte_count += num_of_bytes;
@@ -160,7 +158,7 @@ fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<HeaderM
 pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Fallible<()> {
     let fname = gen_filename(&url, filename, None);
 
-    let mut client = FtpDownload::new(url.clone());
+    let mut client = FtpDownload::new(url);
     let events_handler = DefaultEventsHandler::new(&fname, false, false, quiet_mode)?;
     client.events_hook(events_handler).download()?;
     Ok(())
@@ -216,7 +214,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
     };
 
     let conf = Config {
-        user_agent: user_agent.clone(),
+        user_agent,
         resume: resume_download,
         headers,
         file: fname.clone(),
@@ -229,7 +227,7 @@ pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()>
         chunk_size,
     };
 
-    let mut client = HttpDownload::new(url.clone(), conf.clone());
+    let mut client = HttpDownload::new(url, conf);
     let quiet_mode = args.is_present("quiet");
     let events_handler =
         DefaultEventsHandler::new(&fname, resume_download, concurrent_download, quiet_mode)?;
@@ -363,22 +361,16 @@ impl EventsHandler for DefaultEventsHandler {
         if let Some(ref mut b) = self.prog_bar {
             b.finish();
         }
-        match fs::remove_file(&format!("{}.st", self.fname)) {
-            _ => {}
-        }
+        if fs::remove_file(&format!("{}.st", self.fname)).is_ok(){};
     }
 
     fn on_max_retries(&mut self) {
         if !self.quiet_mode {
             eprintln!("{}", style("max retries exceeded. Quitting!").red());
         }
-        match self.file.flush() {
-            _ => {}
-        }
+        if self.file.flush().is_ok() {}
         if let Some(ref mut file) = self.st_file {
-            match file.flush() {
-                _ => {}
-            }
+            if file.flush().is_ok(){};
         }
         ::std::process::exit(0);
     }
