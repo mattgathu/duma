@@ -1,9 +1,9 @@
 use std::process;
 
+use anyhow::{format_err, Result};
 use clap::{clap_app, crate_version};
 use duma::download::{ftp_download, http_download};
 use duma::utils;
-use anyhow::{format_err,Result};
 fn main() {
     match run() {
         Ok(_) => {}

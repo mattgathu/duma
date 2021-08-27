@@ -3,9 +3,9 @@ use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::Duration;
 
+use anyhow::{format_err, Result};
 use clap::ArgMatches;
 use console::style;
-use anyhow::{format_err, Result};
 use indicatif::{HumanBytes, ProgressBar};
 use reqwest::blocking::Client;
 use reqwest::header::{self, HeaderMap, HeaderValue};
@@ -36,11 +36,7 @@ fn print_headers(headers: HeaderMap) {
     }
 }
 
-fn get_resume_chunk_offsets(
-    fname: &str,
-    ct_len: u64,
-    chunk_size: u64,
-) -> Result<Vec<(u64, u64)>> {
+fn get_resume_chunk_offsets(fname: &str, ct_len: u64, chunk_size: u64) -> Result<Vec<(u64, u64)>> {
     let st_fname = format!("{}.st", fname);
     let input = fs::File::open(st_fname)?;
     let buf = BufReader::new(input);
@@ -362,7 +358,7 @@ impl EventsHandler for DefaultEventsHandler {
         if let Some(ref mut b) = self.prog_bar {
             b.finish();
         }
-        if fs::remove_file(&format!("{}.st", self.fname)).is_ok(){};
+        if fs::remove_file(&format!("{}.st", self.fname)).is_ok() {};
     }
 
     fn on_max_retries(&mut self) {
@@ -371,7 +367,7 @@ impl EventsHandler for DefaultEventsHandler {
         }
         if self.file.flush().is_ok() {}
         if let Some(ref mut file) = self.st_file {
-            if file.flush().is_ok(){};
+            if file.flush().is_ok() {};
         }
         ::std::process::exit(0);
     }
