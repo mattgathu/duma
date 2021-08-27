@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use clap::ArgMatches;
 use console::style;
-use failure::{format_err, Fallible};
+use anyhow::{format_err, Result};
 use indicatif::{HumanBytes, ProgressBar};
 use reqwest::blocking::Client;
 use reqwest::header::{self, HeaderMap, HeaderValue};
@@ -16,7 +16,7 @@ use crate::bar::create_progress_bar;
 use crate::core::{Config, EventsHandler, FtpDownload, HttpDownload};
 use crate::utils::{decode_percent_encoded_data, get_file_handle};
 
-fn request_headers_from_server(url: &Url, timeout: u64, ua: &str) -> Fallible<HeaderMap> {
+fn request_headers_from_server(url: &Url, timeout: u64, ua: &str) -> Result<HeaderMap> {
     let resp = Client::new()
         .get(url.as_ref())
         .timeout(Duration::from_secs(timeout))
@@ -40,7 +40,7 @@ fn get_resume_chunk_offsets(
     fname: &str,
     ct_len: u64,
     chunk_size: u64,
-) -> Fallible<Vec<(u64, u64)>> {
+) -> Result<Vec<(u64, u64)>> {
     let st_fname = format!("{}.st", fname);
     let input = fs::File::open(st_fname)?;
     let buf = BufReader::new(input);
@@ -117,7 +117,7 @@ fn gen_filename(url: &Url, fname: Option<&str>, headers: Option<&HeaderMap>) -> 
     }
 }
 
-fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
+fn calc_bytes_on_disk(fname: &str) -> Result<Option<u64>> {
     // use state file if present
     let st_fname = format!("{}.st", fname);
     if Path::new(&st_fname).exists() {
@@ -140,7 +140,7 @@ fn calc_bytes_on_disk(fname: &str) -> Fallible<Option<u64>> {
     }
 }
 
-fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<HeaderMap> {
+fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Result<HeaderMap> {
     let bytes_on_disk = calc_bytes_on_disk(fname)?;
     let mut headers = HeaderMap::new();
     if let Some(bcount) = bytes_on_disk {
@@ -155,7 +155,7 @@ fn prep_headers(fname: &str, resume: bool, user_agent: &str) -> Fallible<HeaderM
     Ok(headers)
 }
 
-pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Fallible<()> {
+pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Result<()> {
     let fname = gen_filename(&url, filename, None);
 
     let mut client = FtpDownload::new(url);
@@ -164,7 +164,7 @@ pub fn ftp_download(url: Url, quiet_mode: bool, filename: Option<&str>) -> Falli
     Ok(())
 }
 
-pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Fallible<()> {
+pub fn http_download(url: Url, args: &ArgMatches, version: &str) -> Result<()> {
     let resume_download = args.is_present("continue");
     let concurrent_download = !args.is_present("singlethread");
     let user_agent = args
@@ -245,13 +245,14 @@ pub struct DefaultEventsHandler {
     quiet_mode: bool,
 }
 
+// handle the event
 impl DefaultEventsHandler {
     pub fn new(
         fname: &str,
         resume: bool,
         concurrent: bool,
         quiet_mode: bool,
-    ) -> Fallible<DefaultEventsHandler> {
+    ) -> Result<DefaultEventsHandler> {
         let st_file = if concurrent {
             Some(BufWriter::new(get_file_handle(
                 &format!("{}.st", fname),
@@ -328,7 +329,7 @@ impl EventsHandler for DefaultEventsHandler {
         self.server_supports_resume = true;
     }
 
-    fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
+    fn on_content(&mut self, content: &[u8]) -> Result<()> {
         let byte_count = content.len() as u64;
         self.file.write_all(content)?;
         if let Some(ref mut b) = self.prog_bar {
@@ -338,7 +339,7 @@ impl EventsHandler for DefaultEventsHandler {
         Ok(())
     }
 
-    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> Fallible<()> {
+    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> Result<()> {
         let (byte_count, offset, buf) = content;
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(buf)?;
