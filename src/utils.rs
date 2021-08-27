@@ -1,4 +1,4 @@
-use failure::{bail, Fallible};
+use anyhow::{bail, Result};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
@@ -16,7 +16,7 @@ pub fn parse_url(url: &str) -> Result<Url, ParseError> {
     }
 }
 
-pub fn gen_error(msg: String) -> Fallible<()> {
+pub fn gen_error(msg: String) -> Result<()> {
     bail!(msg)
 }
 
@@ -41,7 +41,7 @@ pub fn get_file_handle(fname: &str, resume_download: bool, append: bool) -> io::
     }
 }
 
-pub fn decode_percent_encoded_data(data: &str) -> Fallible<String> {
+pub fn decode_percent_encoded_data(data: &str) -> Result<String> {
     let mut unescaped_bytes: Vec<u8> = Vec::new();
     let mut bytes = data.bytes();
     while let Some(b) = bytes.next() {

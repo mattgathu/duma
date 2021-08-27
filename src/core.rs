@@ -4,7 +4,7 @@ use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use failure::{format_err, Fallible};
+use anyhow::{format_err, Result};
 use reqwest::blocking::{Client, Request};
 use reqwest::header::{self, HeaderMap, HeaderValue};
 use url::Url;
@@ -34,11 +34,11 @@ pub trait EventsHandler {
 
     fn on_headers(&mut self, headers: HeaderMap) {}
 
-    fn on_content(&mut self, content: &[u8]) -> Fallible<()> {
+    fn on_content(&mut self, content: &[u8]) -> Result<()> {
         Ok(())
     }
 
-    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> Fallible<()> {
+    fn on_concurrent_content(&mut self, content: (u64, u64, &[u8])) -> Result<()> {
         Ok(())
     }
 
@@ -70,7 +70,7 @@ impl FtpDownload {
         }
     }
 
-    pub fn download(&mut self) -> Fallible<()> {
+    pub fn download(&mut self) -> Result<()> {
         let ftp_server = format!(
             "{}:{}",
             self.url
@@ -127,7 +127,7 @@ impl FtpDownload {
         Ok(())
     }
 
-    fn send_content(&self, contents: &[u8]) -> Fallible<()> {
+    fn send_content(&self, contents: &[u8]) -> Result<()> {
         for hk in &self.hooks {
             hk.borrow_mut().on_content(contents)?;
         }
@@ -164,7 +164,7 @@ impl HttpDownload {
         }
     }
 
-    pub fn download(&mut self) -> Fallible<()> {
+    pub fn download(&mut self) -> Result<()> {
         let resp = self
             .client
             .get(self.url.as_ref())
@@ -222,7 +222,7 @@ impl HttpDownload {
         self
     }
 
-    fn singlethread_download(&mut self, req: Request) -> Fallible<()> {
+    fn singlethread_download(&mut self, req: Request) -> Result<()> {
         let mut resp = self.client.execute(req)?;
         let ct_len = if let Some(val) = resp.headers().get(header::CONTENT_LENGTH) {
             Some(val.to_str()?.parse::<usize>()?)
@@ -247,7 +247,7 @@ impl HttpDownload {
         Ok(())
     }
 
-    pub fn concurrent_download(&mut self, req: Request, ct_val: &HeaderValue) -> Fallible<()> {
+    pub fn concurrent_download(&mut self, req: Request, ct_val: &HeaderValue) -> Result<()> {
         let (data_tx, data_rx) = mpsc::channel();
         let (errors_tx, errors_rx) = mpsc::channel();
         let ct_len = ct_val.to_str()?.parse::<u64>()?;
@@ -313,7 +313,7 @@ impl HttpDownload {
         sizes
     }
 
-    fn send_content(&mut self, contents: &[u8]) -> Fallible<()> {
+    fn send_content(&mut self, contents: &[u8]) -> Result<()> {
         for hk in &self.hooks {
             hk.borrow_mut().on_content(contents)?;
         }
@@ -333,7 +333,7 @@ fn download_chunk(
         offsets: (u64, u64),
         sender: mpsc::Sender<(u64, u64, Vec<u8>)>,
         start_offset: &mut u64,
-    ) -> Fallible<()> {
+    ) -> Result<()> {
         let byte_range = format!("bytes={}-{}", offsets.0, offsets.1);
         let headers = req.headers_mut();
         headers.insert(header::RANGE, HeaderValue::from_str(&byte_range)?);
@@ -364,8 +364,9 @@ fn download_chunk(
     let end_offset = offsets.1;
     match inner(req, offsets, sender, &mut start_offset) {
         Ok(_) => {}
-        Err(_) => match errors.send((start_offset, end_offset)) {
-            _ => {}
-        },
+        Err(_) => {
+            if errors.send((start_offset, end_offset)).is_ok() {};
+            {}
+        }
     }
 }

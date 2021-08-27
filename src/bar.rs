@@ -1,6 +1,6 @@
 use indicatif::{ProgressBar, ProgressStyle};
 
-static PBAR_FMT: &'static str =
+static PBAR_FMT: &str =
     "{msg} {spinner:.green} {percent}% [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} eta: {eta}";
 
 pub fn create_progress_bar(msg: &str, length: Option<u64>) -> ProgressBar {

@@ -2,3 +2,5 @@ target/
 **/*.rs.bk
 .DS_Store
 .idea
+rusty-tags.vi
+Cargo.lock
